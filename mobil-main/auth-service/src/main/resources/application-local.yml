@@ -1,0 +1,108 @@
+# src/main/resources/application-local.yml
+
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  # ───────────────────────────────────────────────────────────────
+  # CACHE (Caffeine)
+  # ───────────────────────────────────────────────────────────────
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=2_000,expireAfterWrite=30s
+
+  # ───────────────────────────────────────────────────────────────
+  # DATASOURCE (MySQL)
+  # ───────────────────────────────────────────────────────────────
+  datasource:
+    url: jdbc:mysql://localhost:3306/mobilite?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+
+  # ───────────────────────────────────────────────────────────────
+  # JPA / HIBERNATE
+  # ───────────────────────────────────────────────────────────────
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+    show-sql: false
+
+  # ───────────────────────────────────────────────────────────────
+  # SECURITY – JWT resource server
+  # ───────────────────────────────────────────────────────────────
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          secret: ${app.jwt.secret}
+
+  # ───────────────────────────────────────────────────────────────
+  # MULTIPART UPLOAD
+  # ───────────────────────────────────────────────────────────────
+  servlet:
+    multipart:
+      max-file-size: -1
+      max-request-size: -1
+
+  # ───────────────────────────────────────────────────────────────
+  # TASK SCHEDULING
+  # ───────────────────────────────────────────────────────────────
+  task:
+    scheduling:
+      pool:
+        size: 4
+
+  # ───────────────────────────────────────────────────────────────
+  # MAIL (stub pour dev local)
+  # ───────────────────────────────────────────────────────────────
+  mail:
+    host: localhost
+    port: 2500
+    username: ""
+    password: ""
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+    from: no-reply@ride-service.example.com
+
+app:
+  jwt:
+    secret: sCyaX+2NsXpvQUvJBA0Xzj6EObLLZEfggYg0RUe2D68=
+    issuer: mobility-auth
+    clock-skew-sec: 60
+  payments:
+    provider: stub
+  geocoding:
+    api-key: AIzaSyBViGGakHSvDKELeL_3xX3bcfpVddpFIUg   # clé Google Geocoding
+
+# ───────────────────────────────────────────────────────────────
+# Configuration tarifaire globale
+# ───────────────────────────────────────────────────────────────
+pricing:
+  gabon:
+    cityId: 10               # ID interne de Libreville
+    currency: XAF
+    ratePerKm: 200
+    platformShare: 0.20
+  france:
+    cityId: 1                # ID interne de Paris
+    currency: EUR
+    # ratePerKm → facturation dynamique via API Uber ou barème local
+    platformShare: 0.20
+  usa:
+    cityId: 20               # ID interne de New York
+    currency: USD
+    ratePerKm: 1.00
+    platformShare: 0.20

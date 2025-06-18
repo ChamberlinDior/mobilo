@@ -1,0 +1,162 @@
+######################################################################
+#  APPLICATION (profil « default »)
+######################################################################
+
+spring:
+  jackson:
+    mapper:
+      accept-case-insensitive-enums: true   # ← NEW ── “cash”, “CASH”, “Cash”… acceptés
+
+  application:
+    name: ride-service
+
+  profiles:
+    default: local
+
+  # ─────────── CACHE ───────────
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=2000,expireAfterWrite=30s
+
+  # ─────────── DATASOURCE ──────
+  datasource:
+    url: jdbc:mysql://localhost:3306/mobilite?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari.maximum-pool-size: 10
+
+  # ─────────── JPA / HIBERNATE ─
+  jpa:
+    hibernate.ddl-auto: update
+    properties.hibernate.dialect: org.hibernate.dialect.MySQLDialect
+    show-sql: false
+
+  # ─────────── SECURITY (JWT) ──
+  security.oauth2.resourceserver.jwt.secret: ${app.jwt.secret}
+
+  # ─────────── MULTIPART ───────
+  servlet.multipart:
+    max-file-size: -1
+    max-request-size: -1
+
+  # ─────────── TASKS ───────────
+  task.scheduling.pool.size: 4
+
+  # ─────────── MAIL (stub) ─────
+  mail:
+    host: localhost
+    port: 2500
+    protocol: smtp
+    properties.mail.smtp:
+      auth: false
+      starttls.enable: false
+    from: no-reply@ride-service.example.com
+
+# ─────────── SECRETS / KEYS ────
+app:
+  jwt:
+    secret: sCyaX+2NsXpvQUvJBA0Xzj6EObLLZEfggYg0RUe2D68=
+    issuer: mobility-auth
+    clock-skew-sec: 60
+  payments:
+    provider: stub
+  geocoding:
+    api-key: AIzaSyBViGGakHSvDKELeL_3xX3bcfpVddpFIUg
+
+# ────────────────────────────────────────
+#       TARIFICATION PROXIMO 2025
+# ────────────────────────────────────────
+pricing:
+  country:
+
+    france:        # cityId 1 — Paris
+      cityId: 1
+      currency: EUR
+      ratePerKm:
+        X:       1.90
+        POOL:    1.33
+        MOTO:    1.15
+        COMFORT: 2.28
+        XL:      2.66
+        BLACK:   2.95
+        LUX:     3.80
+        DELIVERY: 1.90
+      platformShare:
+        default: 0.20
+
+    usa:           # cityId 20 — New-York
+      cityId: 20
+      currency: USD
+      ratePerKm:
+        X:       2.90
+        POOL:    2.03
+        MOTO:    1.89
+        COMFORT: 3.48
+        XL:      4.06
+        BLACK:   4.50
+        LUX:     5.80
+        DELIVERY: 2.90
+      platformShare:
+        default: 0.20
+
+    gabon:         # cityId 10 — Libreville
+      cityId: 10
+      currency: XAF
+      ratePerKm:
+        X:       250
+        POOL:    225
+        COMFORT: 250
+        XL:      250
+        BLACK:   400
+        LUX:     500
+        DELIVERY: 250
+      flatFare:
+        MOTO:
+          intra_city:        2000   # Libreville ↔ Libreville
+          libreville_akanda: 3000   # Libreville ↔ Akanda/Owendo
+      platformShare:
+        default: 0.20
+
+######################################################################
+#  PROFIL LOCAL  (pas de surcharge)
+######################################################################
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+
+######################################################################
+#  PROFIL PROD  (exemple)
+######################################################################
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  datasource:
+    url: jdbc:mysql://prod-db-host:3306/mobilit?useSSL=true&serverTimezone=UTC
+    username: ride_user
+    password: ChangeMe!
+    hikari.maximum-pool-size: 30
+
+  servlet.multipart:
+    max-file-size: 25MB
+    max-request-size: 25MB
+
+  mail:
+    host: smtp.example.com
+    port: 587
+    username: no-reply@ride-service.example.com
+    password: ultraSecretPassword
+    properties.mail.smtp:
+      auth: true
+      starttls.enable: true
+    from: no-reply@ride-service.example.com
+
+app:
+  payments:
+    provider: stripe

@@ -1,0 +1,78 @@
+# src/main/resources/application-prod.yml
+
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  # ── DATASOURCE ─────────────────────────────────────────────────────────────
+  datasource:
+    url: jdbc:mysql://prod-db-host:3306/mobilite?useSSL=true&serverTimezone=UTC
+    username: mobility
+    password: ChangeMe!
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 30
+
+  # ── JPA / HIBERNATE ─────────────────────────────────────────────────────────
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+    show-sql: false
+
+  # ── MULTIPART (fichiers) ────────────────────────────────────────────────────
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
+
+  # ── MAIL (SMTP) ─────────────────────────────────────────────────────────────
+  mail:
+    host: smtp.example.com
+    port: 587
+    username: no-reply@mobility.example.com
+    password: ultraSecretPassword
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+    from: no-reply@mobility.example.com
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Propriétés applicatives
+# ───────────────────────────────────────────────────────────────────────────────
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET:ChangeMe!}
+    issuer: mobility-auth
+    clock-skew-sec: 60
+  payments:
+    provider: stripe
+  geocoding:
+    api-key: AIzaSyBViGGakHSvDKELeL_3xX3bcfpVddpFIUg   # clé Google Geocoding
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Configuration tarifaire (pricing)
+# ───────────────────────────────────────────────────────────────────────────────
+pricing:
+  gabon:
+    cityId: 10                 # ID interne de Libreville
+    currency: XAF
+    ratePerKm: 200
+    platformShare: 0.20
+  france:
+    cityId: 1                  # ID interne de Paris
+    currency: EUR
+    # ratePerKm → facturation dynamique via API Uber ou barème local
+    platformShare: 0.20
+  usa:
+    cityId: 20                 # ID interne de New York
+    currency: USD
+    ratePerKm: 1.00
+    platformShare: 0.20
