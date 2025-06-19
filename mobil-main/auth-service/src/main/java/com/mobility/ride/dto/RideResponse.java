@@ -10,68 +10,49 @@ import java.util.List;
 
 /**
  * Réponse retournée après la création, la planification ou la
- * re-planification d’une course.
+ * re-planification d’une course ou livraison.
  *
- * <p>Le DTO expose désormais <b>les adresses lisibles</b> (pickupAddress
- * &amp; dropoffAddress) en plus des coordonnées, afin que
- * l’application mobile n’ait plus à refaire de géocodage inverse.</p>
+ * <p>Le DTO expose désormais :
+ *  • les adresses lisibles (pickupAddress & dropoffAddress),
+ *  • le poids du colis et la zone de livraison pour les envois.</p>
  */
 @Getter
 @Builder
 public class RideResponse {
 
     /* ───────────── Identité ───────────── */
-
-    /** Identifiant unique de la course. */
     private Long rideId;
-
-    /** Statut courant : REQUESTED, SCHEDULED, IN_PROGRESS, COMPLETED… */
     private String status;
 
     /* ─────────── Localisation ─────────── */
-
-    /** Latitude / longitude du point de prise en charge. */
     private Double pickupLat;
     private Double pickupLng;
-
-    /** Latitude / longitude du point de dépose. */
     private Double dropoffLat;
     private Double dropoffLng;
-
-    /** Adresse lisible du point de prise en charge (nouveau). */
     private String pickupAddress;
-
-    /** Adresse lisible du point de dépose (nouveau). */
     private String dropoffAddress;
 
     /* ───────── Produit & options ──────── */
-
     private String        productType;
     private List<String>  options;
 
     /* ───────── Planification ─────────── */
-
-    /** Date/heure prévue si la course est planifiée, sinon {@code null}. */
     private OffsetDateTime scheduledAt;
 
     /* ───────── Paiement ─────────────── */
-
-    /** ID du moyen de paiement (carte, wallet, espèces, …). */
-    private Long paymentMethodId;
+    private Long          paymentMethodId;
 
     /* ───────── Tarification ─────────── */
+    private BigDecimal    totalFare;
+    private String        currency;
 
-    /** Montant total toutes taxes comprises. */
-    private BigDecimal totalFare;
-
-    /** Devise ISO-4217 (USD, EUR, XAF…). */
-    private String currency;
+    /* ───────── Livraison ────────────── */
+    /** Poids du colis en kilogrammes (null si course classique). */
+    private BigDecimal    weightKg;
+    /** Zone de livraison (LOCAL, INTERURBAIN, INTERNATIONAL_USA, INTERNATIONAL_FRANCE). */
+    private String        deliveryZone;
 
     /* ───────── Sécurité & audit ─────── */
-
-    /** Code PIN de sécurité à communiquer au chauffeur. */
-    private String safetyPin;
-
-    /** Horodatage de création en base. */
+    private String        safetyPin;
     private OffsetDateTime createdAt;
 }

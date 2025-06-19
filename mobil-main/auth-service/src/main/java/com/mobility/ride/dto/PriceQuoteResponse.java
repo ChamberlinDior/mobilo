@@ -8,17 +8,24 @@
 //   • platformShare     – pourcentage retenu par Proximo (reporting)
 //   • ratePerKmUsed     – tarif/km appliqué (null si forfait)
 //   • flatFareLabel     – identifie un forfait (ex. "MOTO.intra_city"), null sinon
+//  Ajouts v2025-07-01 pour livraisons interurbain & international:
+//   • weightKg         – poids du colis (kg)
+//   • deliveryZone     – zone de livraison (LOCAL, INTERURBAIN, INTERNATIONAL_USA, INTERNATIONAL_FRANCE)
 // ============================================================================
 package com.mobility.ride.dto;
 
+import com.mobility.ride.model.DeliveryZone;
 import com.mobility.ride.model.ProductType;
 import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
-@Getter @Setter
-@Builder @NoArgsConstructor @AllArgsConstructor
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class PriceQuoteResponse {
 
     /* ───────────────────────── CONTEXTE ───────────────────────── */
@@ -27,6 +34,13 @@ public class PriceQuoteResponse {
 
     /** Service choisi : X, XL, POOL, MOTO, … */
     private ProductType   productType;
+
+    /* ────────── LIVRAISON (nouveau) ────────── */
+    /** Poids du colis (kg). */
+    private BigDecimal    weightKg;
+
+    /** Zone de livraison. */
+    private DeliveryZone  deliveryZone;
 
     /* ─────────────────── MÉTRIQUES TRAJET ─────────────────────── */
     /** Distance estimée (km). */

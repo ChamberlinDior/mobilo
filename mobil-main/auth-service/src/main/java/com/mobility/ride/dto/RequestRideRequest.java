@@ -1,6 +1,6 @@
-// src/main/java/com/mobility/ride/dto/RequestRideRequest.java
 package com.mobility.ride.dto;
 
+import com.mobility.ride.model.DeliveryZone;
 import jakarta.validation.constraints.*;
 import lombok.Builder;
 import lombok.Getter;
@@ -9,11 +9,11 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * Requête pour une course immédiate (non planifiée).
+ * Requête pour une course immédiate (non planifiée) ou un envoi de colis.
  *
  * <p>Contient les informations minimales nécessaires pour déclencher
- * une course « à la volée » : géolocalisation, type de service, tarif
- * calculé côté client et, le cas échéant, options additionnelles.</p>
+ * une course « à la volée » ou une livraison : géolocalisation, type de service,
+ * poids du colis, zone de livraison, tarif calculé côté client, etc.</p>
  *
  * <p>Le passager (rider) est identifié via le JWT ; il n’est donc PAS
  * transmis dans cette payload.</p>
@@ -22,7 +22,7 @@ import java.util.List;
 @Builder
 public class RequestRideRequest {
 
-    /** Doit rester nul : le backend déduit le rider depuis le JWT. */
+    /** Doit rester null : le backend déduit le rider depuis le JWT. */
     @Null
     private Long riderId;
 
@@ -46,11 +46,20 @@ public class RequestRideRequest {
     @DecimalMin("-180.0") @DecimalMax("180.0")
     private Double dropoffLng;
 
-    /** Type de produit (X, XL, POOL, etc.). */
+    /** Type de produit (X, XL, POOL, DELIVERY, etc.). */
     @NotBlank
     private String productType;
 
-    /** Montant total estimé (obligatoire). */
+    /** Poids du colis en kilogrammes (>= 0.1 kg pour la livraison). */
+    @NotNull
+    @DecimalMin(value = "0.1", inclusive = true)
+    private BigDecimal weightKg;
+
+    /** Zone de livraison. */
+    @NotNull
+    private DeliveryZone deliveryZone;
+
+    /** Montant total estimé (hors conversion, obligatoire). */
     @NotNull
     @DecimalMin(value = "0.0", inclusive = false)
     private BigDecimal totalFare;
@@ -61,4 +70,5 @@ public class RequestRideRequest {
 
     /** Liste d’options choisies par le passager (facultatif). */
     private List<String> options;
+
 }

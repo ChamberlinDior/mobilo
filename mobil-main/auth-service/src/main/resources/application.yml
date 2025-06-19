@@ -65,6 +65,12 @@ app:
   geocoding:
     api-key: AIzaSyBViGGakHSvDKELeL_3xX3bcfpVddpFIUg
 
+# ─────────── EXCHANGE RATES ────
+exchange:
+  api:
+    url: https://api.exchangerate.host/latest   # ← point de terminason de votre provider de taux de change
+    key: YOUR_API_KEY_HERE                      # ← remplacez par votre clé (si nécessaire)
+
 # ────────────────────────────────────────
 #       TARIFICATION PROXIMO 2025
 # ────────────────────────────────────────
@@ -160,3 +166,9 @@ spring:
 app:
   payments:
     provider: stripe
+
+# ─────────── EXCHANGE RATES ────
+exchange:
+  api:
+    url: https://api.exchangerate.host/latest
+    key: YOUR_API_KEY_HERE

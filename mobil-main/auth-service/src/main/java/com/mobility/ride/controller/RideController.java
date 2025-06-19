@@ -1,12 +1,14 @@
 // ─────────────────────────────────────────────────────────────
 //  FILE : src/main/java/com/mobility/ride/controller/RideController.java
 //  v2025-06-15 – « Your Trips / History & Re-planification »
+//  + mises à jour 2025-07-01 pour livraisons interurbain & international
 // ─────────────────────────────────────────────────────────────
 package com.mobility.ride.controller;
 
 import com.mobility.ride.dto.RequestRideRequest;
 import com.mobility.ride.dto.RideResponse;
 import com.mobility.ride.dto.ScheduleRideRequest;
+import com.mobility.ride.model.DeliveryZone;
 import com.mobility.ride.service.RideService;
 import com.mobility.ride.service.RideUserService;
 import jakarta.validation.Valid;
@@ -15,26 +17,13 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
- * End-points REST relatifs aux courses (« rides »).
- *
- * <p>Fonctionnalités exposées :</p>
- * <ul>
- *   <li>Demande immédiate :             <b>POST /rides/request</b></li>
- *   <li>Planification future :          <b>POST /rides/schedule</b></li>
- *   <li>Liste des rides planifiés :     <b>GET  /rides/scheduled</b></li>
- *   <li>Historique des rides :          <b>GET  /rides/history</b></li>
- *   <li>Re-planification :              <b>PATCH /rides/{id}/reschedule</b></li>
- *   <li>Consultation individuelle :     <b>GET  /rides/{id}</b></li>
- * </ul>
- *
- * <p><b>IMPORTANT :</b> tous les chemins fixes (<code>/scheduled</code>,
- * <code>/history</code>, …) sont déclarés <em>avant</em> le catch-all
- * <code>/{rideId:\d+}</code> pour éviter les collisions.</p>
+ * End-points REST relatifs aux courses (« rides ») et livraisons.
  */
 @RestController
 @RequestMapping("/api/v1/rides")
@@ -44,9 +33,7 @@ public class RideController {
     private final RideService     rideService;
     private final RideUserService rideUserService;
 
-    /* ═══════════════════════════════════════════════════════════
-       1) DEMANDE IMMÉDIATE
-       ═══════════════════════════════════════════════════════════ */
+    /* 1) DEMANDE IMMÉDIATE ou LIVRAISON */
     @PostMapping("/request")
     public ResponseEntity<RideResponse> requestRide(
             @RequestHeader("Authorization") String authHeader,
@@ -54,27 +41,36 @@ public class RideController {
     ) {
         Long riderId = rideUserService.getAuthenticatedUserId(authHeader);
 
+        // Validation de poids pour livraisons hors zone LOCAL
+        DeliveryZone zone = request.getDeliveryZone() != null
+                ? request.getDeliveryZone()
+                : DeliveryZone.LOCAL;
+        if (zone != DeliveryZone.LOCAL && request.getWeightKg() == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Weight (kg) must be provided for interurban and international deliveries"
+            );
+        }
+
         RequestRideRequest sanitized = RequestRideRequest.builder()
-                .riderId     (riderId)
-                .pickupLat   (request.getPickupLat())
-                .pickupLng   (request.getPickupLng())
-                .dropoffLat  (request.getDropoffLat())
-                .dropoffLng  (request.getDropoffLng())
-                .productType (request.getProductType())
-                // ─── Ajout des deux champs manquants ─────────
-                .totalFare   (request.getTotalFare())
-                .currency    (request.getCurrency())
-                // ────────────────────────────────────────────
-                .options     (request.getOptions())
+                .riderId      (riderId)
+                .pickupLat    (request.getPickupLat())
+                .pickupLng    (request.getPickupLng())
+                .dropoffLat   (request.getDropoffLat())
+                .dropoffLng   (request.getDropoffLng())
+                .productType  (request.getProductType())
+                .weightKg     (request.getWeightKg())
+                .deliveryZone (zone)
+                .totalFare    (request.getTotalFare())
+                .currency     (request.getCurrency())
+                .options      (request.getOptions())
                 .build();
 
         RideResponse resp = rideService.requestRide(sanitized);
         return ResponseEntity.status(HttpStatus.CREATED).body(resp);
     }
 
-    /* ═══════════════════════════════════════════════════════════
-       2) PLANIFICATION
-       ═══════════════════════════════════════════════════════════ */
+    /* 2) PLANIFICATION FUTURE ou LIVRAISON PLANIFIÉE */
     @PostMapping("/schedule")
     public ResponseEntity<RideResponse> scheduleRide(
             @RequestHeader("Authorization") String authHeader,
@@ -82,27 +78,38 @@ public class RideController {
     ) {
         Long riderId = rideUserService.getAuthenticatedUserId(authHeader);
 
+        // Validation de poids pour livraisons hors zone LOCAL
+        DeliveryZone zone = body.getDeliveryZone() != null
+                ? body.getDeliveryZone()
+                : DeliveryZone.LOCAL;
+        if (zone != DeliveryZone.LOCAL && body.getWeightKg() == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Weight (kg) must be provided for interurban and international deliveries"
+            );
+        }
+
         ScheduleRideRequest sanitized = ScheduleRideRequest.builder()
-                .riderId         (riderId)
-                .pickupLat       (body.getPickupLat())
-                .pickupLng       (body.getPickupLng())
-                .dropoffLat      (body.getDropoffLat())
-                .dropoffLng      (body.getDropoffLng())
-                .productType     (body.getProductType())
-                .options         (body.getOptions())
-                .scheduledAt     (body.getScheduledAt())
-                .paymentMethodId (body.getPaymentMethodId())
-                .totalFare       (body.getTotalFare())
-                .currency        (body.getCurrency())
+                .riderId        (riderId)
+                .pickupLat      (body.getPickupLat())
+                .pickupLng      (body.getPickupLng())
+                .dropoffLat     (body.getDropoffLat())
+                .dropoffLng     (body.getDropoffLng())
+                .productType    (body.getProductType())
+                .options        (body.getOptions())
+                .weightKg       (body.getWeightKg())
+                .deliveryZone   (zone)
+                .scheduledAt    (body.getScheduledAt())
+                .paymentMethodId(body.getPaymentMethodId())
+                .totalFare      (body.getTotalFare())
+                .currency       (body.getCurrency())
                 .build();
 
         RideResponse resp = rideService.scheduleRide(sanitized);
         return ResponseEntity.status(HttpStatus.CREATED).body(resp);
     }
 
-    /* ═══════════════════════════════════════════════════════════
-       3) LISTE DES RIDES PLANIFIÉS (onglet « À venir »)
-       ═══════════════════════════════════════════════════════════ */
+    /* 3) LISTE DES RIDES PLANIFIÉS */
     @GetMapping("/scheduled")
     public ResponseEntity<List<RideResponse>> listScheduled(
             @RequestHeader("Authorization") String authHeader) {
@@ -111,9 +118,7 @@ public class RideController {
         return ResponseEntity.ok(rideService.listScheduled(riderId));
     }
 
-    /* ═══════════════════════════════════════════════════════════
-       4) HISTORIQUE DES RIDES  (onglet « Historique »)
-       ═══════════════════════════════════════════════════════════ */
+    /* 4) HISTORIQUE DES RIDES */
     @GetMapping("/history")
     public ResponseEntity<List<RideResponse>> listHistory(
             @RequestHeader("Authorization") String authHeader) {
@@ -122,9 +127,7 @@ public class RideController {
         return ResponseEntity.ok(rideService.listHistory(riderId));
     }
 
-    /* ═══════════════════════════════════════════════════════════
-       5) RE-PLANIFICATION (déplacement de l’heure)
-       ═══════════════════════════════════════════════════════════ */
+    /* 5) RE-PLANIFICATION */
     @PatchMapping("/{rideId:\\d+}/reschedule")
     public ResponseEntity<Void> reschedule(
             @PathVariable Long rideId,
@@ -136,9 +139,7 @@ public class RideController {
         return ResponseEntity.noContent().build();
     }
 
-    /* ═══════════════════════════════════════════════════════════
-       6) CONSULTATION INDIVIDUELLE
-       ═══════════════════════════════════════════════════════════ */
+    /* 6) CONSULTATION INDIVIDUELLE */
     @GetMapping("/{rideId:\\d+}")
     public ResponseEntity<RideResponse> getRide(@PathVariable Long rideId) {
         return ResponseEntity.ok(rideService.getRide(rideId));

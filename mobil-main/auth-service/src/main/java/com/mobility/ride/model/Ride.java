@@ -120,6 +120,15 @@ public class Ride {
     @Column(name = "currency", length = 8, nullable = false)
     private String currency;
 
+    /* ─────────── Livraison / poids ───────── */
+
+    @Column(name = "weight_kg", precision = 8, scale = 2, nullable = false)
+    private BigDecimal weightKg;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "delivery_zone", length = 32, nullable = false)
+    private DeliveryZone deliveryZone;
+
     /* ───────────── Sécurité & méta ───── */
 
     @Column(name = "safety_pin", length = 4, updatable = false)
