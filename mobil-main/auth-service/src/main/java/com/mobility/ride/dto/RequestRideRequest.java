@@ -1,6 +1,11 @@
+// ───────────────────────────────────────────────────────────────
+//  FILE : src/main/java/com/mobility/ride/dto/RequestRideRequest.java
+//  v2025-07-22 – « 0 kg permis pour les rides LOCAL »
+// ───────────────────────────────────────────────────────────────
 package com.mobility.ride.dto;
 
 import com.mobility.ride.model.DeliveryZone;
+import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.*;
 import lombok.Builder;
 import lombok.Getter;
@@ -9,66 +14,80 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * Requête pour une course immédiate (non planifiée) ou un envoi de colis.
+ * Requête pour déclencher une course immédiate (ride) ou une livraison.
  *
- * <p>Contient les informations minimales nécessaires pour déclencher
- * une course « à la volée » ou une livraison : géolocalisation, type de service,
- * poids du colis, zone de livraison, tarif calculé côté client, etc.</p>
- *
- * <p>Le passager (rider) est identifié via le JWT ; il n’est donc PAS
- * transmis dans cette payload.</p>
+ * <ul>
+ *   <li><strong>weightKg</strong> :
+ *       <ul>
+ *         <li>≥ 0,0 kg pour les rides simples (zone = LOCAL) — 0 signifie « pas de colis ».</li>
+ *         <li>≥ 0,1 kg pour les livraisons (zone ≠ LOCAL).</li>
+ *       </ul>
+ *   </li>
+ *   <li>Le passager est authentifié via le JWT ; <code>riderId</code> est donc <em>null</em> côté front.</li>
+ * </ul>
  */
 @Getter
 @Builder
 public class RequestRideRequest {
 
-    /** Doit rester null : le backend déduit le rider depuis le JWT. */
+    /* ─────────── Contexte ─────────── */
+
+    /** ID interne du passager (injecté côté serveur). */
     @Null
     private Long riderId;
 
-    /** Latitude du point de prise en charge. */
-    @NotNull
-    @DecimalMin("-90.0") @DecimalMax("90.0")
+    /* ─────────── Points de trajet ─────────── */
+
+    @NotNull @DecimalMin("-90.0")  @DecimalMax("90.0")
     private Double pickupLat;
 
-    /** Longitude du point de prise en charge. */
-    @NotNull
-    @DecimalMin("-180.0") @DecimalMax("180.0")
+    @NotNull @DecimalMin("-180.0") @DecimalMax("180.0")
     private Double pickupLng;
 
-    /** Latitude du point de dépose. */
-    @NotNull
-    @DecimalMin("-90.0") @DecimalMax("90.0")
+    @NotNull @DecimalMin("-90.0")  @DecimalMax("90.0")
     private Double dropoffLat;
 
-    /** Longitude du point de dépose. */
-    @NotNull
-    @DecimalMin("-180.0") @DecimalMax("180.0")
+    @NotNull @DecimalMin("-180.0") @DecimalMax("180.0")
     private Double dropoffLng;
 
-    /** Type de produit (X, XL, POOL, DELIVERY, etc.). */
+    /* ─────────── Produit & options ─────────── */
+
+    /** Type de service (X, XL, POOL, DELIVERY…). */
     @NotBlank
     private String productType;
 
-    /** Poids du colis en kilogrammes (>= 0.1 kg pour la livraison). */
-    @NotNull
-    @DecimalMin(value = "0.1", inclusive = true)
+    /** Options facultatives sélectionnées par l’utilisateur. */
+    private List<String> options;
+
+    /* ────────── Livraison / poids ────────── */
+
+    /**
+     * Poids du colis en kilogrammes.
+     * <ul>
+     *   <li>0 kg autorisé pour zone = LOCAL.</li>
+     *   <li>&ge; 0,1 kg requis pour toute livraison (INTERURBAIN / INTERNATIONAL).</li>
+     * </ul>
+     */
+    @Nullable
+    @DecimalMin(value = "0.0", inclusive = true,
+            message = "weightKg doit être ≥ 0.1 pour les livraisons")
     private BigDecimal weightKg;
 
-    /** Zone de livraison. */
+    /**
+     * Zone de service : LOCAL, INTERURBAIN ou INTERNATIONAL.
+     * Peut être null dans le JSON (défaut LOCAL appliqué en contrôleur).
+     */
     @NotNull
     private DeliveryZone deliveryZone;
 
-    /** Montant total estimé (hors conversion, obligatoire). */
+    /* ─────────── Tarification ─────────── */
+
+    /** Montant total fourni par l’app (obligatoire). */
     @NotNull
     @DecimalMin(value = "0.0", inclusive = false)
     private BigDecimal totalFare;
 
-    /** Devise du montant (EUR, USD, XAF…). */
+    /** Devise ISO-4217 (EUR, USD, XAF…). */
     @NotBlank
     private String currency;
-
-    /** Liste d’options choisies par le passager (facultatif). */
-    private List<String> options;
-
 }
