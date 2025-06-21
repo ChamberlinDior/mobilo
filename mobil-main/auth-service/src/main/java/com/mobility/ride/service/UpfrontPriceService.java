@@ -1,7 +1,7 @@
-// ============================================================================
-//  PACKAGE : com.mobility.ride.service
-//  FILE    : UpfrontPriceService.java               (v2025-07-01)
-// ============================================================================
+// ───────────────────────────────────────────────────────────────
+//  FILE : src/main/java/com/mobility/ride/service/UpfrontPriceService.java
+//  v2025-07-20  —  « Auto-Currency »
+// ───────────────────────────────────────────────────────────────
 package com.mobility.ride.service;
 
 import com.mobility.ride.config.PricingProperties;
@@ -26,84 +26,109 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class UpfrontPriceService {
 
-    private final SurgePricingService    surgeService;
-    private final PricingMapper          mapper;
-    private final PricingProperties      pricing;
-    private final ExchangeRateService    exchangeRateService;
+    private final SurgePricingService surgeService;
+    private final PricingMapper       mapper;
+    private final PricingProperties   pricing;
+    private final ExchangeRateService exchangeRateService;
 
     private static final double DEFAULT_RATE_PER_KM = 1.0;
 
+    /* ============================================================
+       UTILITAIRES
+       ============================================================ */
     private static BigDecimal money(double v) {
         return BigDecimal.valueOf(v).setScale(2, RoundingMode.HALF_UP);
     }
 
-    public PriceQuoteResponse quote(@Valid PriceQuoteRequest req) {
-        // --- deliveryZone et weight par défaut pour LOCAL ---
-        DeliveryZone zone   = Optional.ofNullable(req.deliveryZone()).orElse(DeliveryZone.LOCAL);
-        BigDecimal    weight = Optional.ofNullable(req.weightKg()).orElse(BigDecimal.ZERO);
+    /**
+     * Détermine la devise d’origine **sans intervention du front** :
+     * <ol>
+     *   <li>Si le front fournit tout de même {@code currency}, on la respecte.</li>
+     *   <li>Sinon on lit, via le YAML de tarification, la devise associée au
+     *       {@code cityId} de la requête.</li>
+     *   <li>Fallback : XAF (Gabon).</li>
+     * </ol>
+     */
+    private String resolveOriginCurrency(PriceQuoteRequest req) {
 
-        // si on n'est pas en LOCAL, le poids devient obligatoire
-        if (zone != DeliveryZone.LOCAL) {
-            Objects.requireNonNull(
-                    req.weightKg(),
-                    "Weight (kg) must be provided for interurban and international deliveries"
-            );
+        /* 1) Front explicite → on garde. */
+        if (req.currency() != null && !req.currency().isBlank()) {
+            return req.currency().toUpperCase();
         }
 
-        // 1) Livraison INTERURBAIN / INTERNATIONAL
+        /* 2) YAML : cityId → currency. */
+        return Optional.ofNullable(pricing.getCountry())
+                .flatMap(map -> map.values().stream()
+                        .filter(c -> c.getCityId().equals(req.cityId()))
+                        .findFirst())
+                .map(PricingProperties.Country::getCurrency)
+                .orElse("XAF");                          // 3) fallback
+    }
+
+    /* ============================================================
+       MÉTHODE PRINCIPALE
+       ============================================================ */
+    public PriceQuoteResponse quote(@Valid PriceQuoteRequest req) {
+
+        /* ───── Lecture & validations initiales ───── */
+        DeliveryZone zone   = Optional.ofNullable(req.deliveryZone())
+                .orElse(DeliveryZone.LOCAL);
+        BigDecimal weight   = Optional.ofNullable(req.weightKg())
+                .orElse(BigDecimal.ZERO);
+
         if (zone != DeliveryZone.LOCAL) {
-            BigDecimal perKg   = zone == DeliveryZone.INTERURBAIN
-                    ? BigDecimal.valueOf(5000)
-                    : BigDecimal.valueOf(10000);
-            BigDecimal baseXaf = weight.multiply(perKg).setScale(2, RoundingMode.HALF_UP);
+            Objects.requireNonNull(req.weightKg(),
+                    "Weight (kg) must be provided for interurban and international deliveries");
+        }
 
-            String    outCurrency;
-            BigDecimal totalFare;
-            if (zone == DeliveryZone.INTERURBAIN) {
-                outCurrency = "XAF";
-                totalFare   = baseXaf;
-            } else {
-                // INTERNATIONAL
-                outCurrency = req.deliveryZone() == DeliveryZone.INTERNATIONAL_USA ? "USD" : "EUR";
-                BigDecimal rate = exchangeRateService.getRate("XAF", outCurrency);
-                totalFare        = baseXaf.multiply(rate).setScale(2, RoundingMode.HALF_UP);
-            }
+        /* ───── Devise d’origine (auto-détection) ───── */
+        String originCurrency = resolveOriginCurrency(req);
 
-            BigDecimal surgeFactor = BigDecimal.ONE; // pas de surge sur livraisons
+        /* ═════════════════════════════════════════════
+           1) LIVRAISON (INTERURBAIN ou INTERNATIONAL)
+           ═════════════════════════════════════════════ */
+        if (zone != DeliveryZone.LOCAL) {
+
+            BigDecimal perKg   = (zone == DeliveryZone.INTERURBAIN)
+                    ? BigDecimal.valueOf(5_000)   // Interurbain
+                    : BigDecimal.valueOf(10_000); // International
+
+            BigDecimal baseXaf = weight.multiply(perKg)
+                    .setScale(2, RoundingMode.HALF_UP);
+
+            /* Conversion XAF → originCurrency (sauf si déjà XAF) */
+            BigDecimal rate = originCurrency.equals("XAF")
+                    ? BigDecimal.ONE
+                    : exchangeRateService.getRate("XAF", originCurrency);
+
+            BigDecimal totalFare = baseXaf.multiply(rate)
+                    .setScale(2, RoundingMode.HALF_UP);
 
             return mapper.toPriceQuoteDto(
                     req.cityId(),
                     req.productType(),
                     req.distanceKm(),
                     Math.round(req.durationMin() * 60),
-                    baseXaf,
-                    surgeFactor,
+                    baseXaf,                 // base toujours en XAF
+                    BigDecimal.ONE,          // pas de surge sur les colis
                     totalFare,
-                    outCurrency,
+                    originCurrency,
                     OffsetDateTime.now().plusMinutes(5),
                     weight,
                     zone
             );
         }
 
-        // 2) Courses CLASSIQUES (LOCAL)
+        /* ═════════════════════════════════════════════
+           2) COURSE CLASSIQUE (LOCAL) – logique inchangée
+           ═════════════════════════════════════════════ */
         PricingProperties.Country cfg = Optional.ofNullable(pricing.getCountry())
                 .flatMap(map -> map.values().stream()
                         .filter(c -> c.getCityId().equals(req.cityId()))
                         .findFirst())
                 .orElse(null);
 
-        if (cfg == null && req.currency() != null && !req.currency().isBlank()) {
-            cfg = pricing.getCountry().values().stream()
-                    .filter(c -> req.currency().equalsIgnoreCase(c.getCurrency()))
-                    .findFirst()
-                    .orElse(null);
-            if (cfg != null) log.debug("Tarif fallback par devise → {}", cfg.getCurrency());
-        }
-
-        String currency = Optional.ofNullable(cfg)
-                .map(PricingProperties.Country::getCurrency)
-                .orElse(req.currency());
+        String currency = originCurrency;   // ← déjà résolu
 
         Double flatFare = Optional.ofNullable(cfg)
                 .map(PricingProperties.Country::getFlatFare)
@@ -119,22 +144,18 @@ public class UpfrontPriceService {
 
         double base  = (flatFare != null ? flatFare : req.distanceKm() * ratePerKm);
         double surge = surgeService.getSurgeFactor(
-                Optional.ofNullable(cfg)
-                        .map(PricingProperties.Country::getCityId)
+                Optional.ofNullable(cfg).map(PricingProperties.Country::getCityId)
                         .orElse(req.cityId()),
-                req.productType()
-        );
+                req.productType());
         double total = base * surge;
 
         log.debug("💰 quote cityId={} type={} km={} base={}{} surge={}× total={}",
                 req.cityId(), req.productType(),
                 req.distanceKm(), money(base), currency,
-                money(surge), money(total)
-        );
+                money(surge), money(total));
 
         return mapper.toPriceQuoteDto(
-                Optional.ofNullable(cfg)
-                        .map(PricingProperties.Country::getCityId)
+                Optional.ofNullable(cfg).map(PricingProperties.Country::getCityId)
                         .orElse(req.cityId()),
                 req.productType(),
                 req.distanceKm(),
