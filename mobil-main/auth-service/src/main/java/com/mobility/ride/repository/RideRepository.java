@@ -1,6 +1,6 @@
 // ───────────────────────────────────────────────────────────
 //  FILE : src/main/java/com/mobility/ride/repository/RideRepository.java
-//  v2025-06-15 – « Your Trips / History & Re-planification »
+//  v2025-08-02 – + « Driver offers » (open rides nearby – SQL natif, table ✅ rides)
 // ───────────────────────────────────────────────────────────
 package com.mobility.ride.repository;
 
@@ -20,13 +20,14 @@ import java.util.Optional;
 /**
  * Repository JPA de l’entité {@link Ride}.
  *
- * <p>Fonctionnalités :</p>
+ * <p>Fonctionnalités incluses :</p>
  * <ul>
  *   <li>CRUD et recherches Spring-Data ;</li>
- *   <li>Listing « À venir » (SCHEDULED) trié sur <code>scheduledAt</code> ;</li>
- *   <li>Historique complet trié sur <code>createdAt</code> (desc) ;</li>
- *   <li>Re-planification transactionnelle (<code>updateScheduledAt</code>) ;</li>
- *   <li>Fenêtrage temporel (between) pour l’analytics ou le back-office.</li>
+ *   <li>« Your Trips » (à venir & historique) ;</li>
+ *   <li>Re-planification atomique ;</li>
+ *   <li>Fenêtrage temporel pour analytics ;</li>
+ *   <li><strong>Driver offers</strong> – recherche de rides
+ *       <code>REQUESTED</code> autour d’un point GPS.</li>
  * </ul>
  */
 @Repository
@@ -35,94 +36,76 @@ public interface RideRepository extends JpaRepository<Ride, Long> {
     /* ═══════════════════════════════════════════════════════
        1) Recherches simples
        ═══════════════════════════════════════════════════════ */
-
-    /** Tous les rides d’un passager, sans ordre. */
     List<Ride> findAllByRiderId(Long riderId);
-
-    /** Historique complet, newest → oldest (pour l’onglet « Historique »). */
     List<Ride> findAllByRiderIdOrderByCreatedAtDesc(Long riderId);
-
-    /** Rides d’un conducteur. */
     List<Ride> findAllByDriverId(Long driverId);
-
-    /** Tous les rides d’un statut donné. */
     List<Ride> findAllByStatus(RideStatus status);
-
-    /** Lookup direct (hérité mais exposé pour clarté). */
-    @Override
-    Optional<Ride> findById(Long id);
+    @Override Optional<Ride> findById(Long id);
 
     /* ═══════════════════════════════════════════════════════
        2) « Your Trips » – listing planifié
        ═══════════════════════════════════════════════════════ */
-
-    /**
-     * Rides à venir d’un passager, triés du plus proche au plus lointain.
-     */
-    List<Ride> findByRiderIdAndStatusOrderByScheduledAtAsc(
-            Long riderId,
-            RideStatus status  /* = SCHEDULED */
-    );
-
-    /** Variante non triée (conservation API existante). */
+    List<Ride> findByRiderIdAndStatusOrderByScheduledAtAsc(Long riderId, RideStatus status);
     List<Ride> findByRiderIdAndStatus(Long riderId, RideStatus status);
 
-    /**
-     * Mise à jour atomique de la date/heure planifiée.
-     *
-     * @return le nombre de lignes impactées (0 ou 1 normalement).
-     */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query("""
         update Ride r
            set r.scheduledAt = :ts
-         where r.id         = :id
-           and r.status     = com.mobility.ride.model.RideStatus.SCHEDULED
+         where r.id     = :id
+           and r.status = com.mobility.ride.model.RideStatus.SCHEDULED
         """)
-    int updateScheduledAt(
-            @Param("id") Long id,
-            @Param("ts") OffsetDateTime ts
-    );
+    int updateScheduledAt(@Param("id") Long id, @Param("ts") OffsetDateTime ts);
 
     /* ═══════════════════════════════════════════════════════
-       3) Fenêtres temporelles  (analytics / exports)
+       3) Fenêtres temporelles
        ═══════════════════════════════════════════════════════ */
-
-    /** Tous les rides planifiés entre deux dates (par ex. cron de rappel). */
     @Query("""
         select r from Ride r
          where r.status = com.mobility.ride.model.RideStatus.SCHEDULED
            and r.scheduledAt between :from and :to
         """)
-    List<Ride> findScheduledBetween(
-            @Param("from") OffsetDateTime from,
-            @Param("to")   OffsetDateTime to
-    );
+    List<Ride> findScheduledBetween(@Param("from") OffsetDateTime from,
+                                    @Param("to")   OffsetDateTime to);
 
-    /** Historique d’un passager sur une période. */
     @Query("""
         select r from Ride r
          where r.riderId   = :riderId
            and r.createdAt between :from and :to
          order by r.createdAt desc
         """)
-    List<Ride> findHistoryByRiderBetween(
-            @Param("riderId") Long riderId,
-            @Param("from")    OffsetDateTime from,
-            @Param("to")      OffsetDateTime to
-    );
+    List<Ride> findHistoryByRiderBetween(@Param("riderId") Long riderId,
+                                         @Param("from")    OffsetDateTime from,
+                                         @Param("to")      OffsetDateTime to);
 
-    /** Historique d’un conducteur sur une période. */
     @Query("""
         select r from Ride r
          where r.driverId  = :driverId
            and r.createdAt between :from and :to
          order by r.createdAt desc
         """)
-    List<Ride> findHistoryByDriverBetween(
-            @Param("driverId") Long driverId,
-            @Param("from")     OffsetDateTime from,
-            @Param("to")       OffsetDateTime to
-    );
+    List<Ride> findHistoryByDriverBetween(@Param("driverId") Long driverId,
+                                          @Param("from")     OffsetDateTime from,
+                                          @Param("to")       OffsetDateTime to);
+
+    /* ═══════════════════════════════════════════════════════
+       4) Driver offers – rides REQUESTED proches d’un point
+       ═══════════════════════════════════════════════════════
+       Requête native MySQL 8 : distance sphérique (mètres) et filtre
+       sur un rayon « radiusKm ». La table réelle est **rides**.
+       ------------------------------------------------------ */
+    @Query(value = """
+        SELECT *
+          FROM rides r
+         WHERE r.status = 'REQUESTED'
+           AND ST_Distance_Sphere(
+                 POINT(r.pickup_lng, r.pickup_lat),
+                 POINT(:lng, :lat)
+               ) < :radiusKm * 1000
+        """,
+            nativeQuery = true)
+    List<Ride> findOpenNear(@Param("lat")      double lat,
+                            @Param("lng")      double lng,
+                            @Param("radiusKm") double radiusKm);
 }

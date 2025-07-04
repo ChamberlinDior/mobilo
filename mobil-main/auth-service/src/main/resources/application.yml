@@ -5,7 +5,7 @@
 spring:
   jackson:
     mapper:
-      accept-case-insensitive-enums: true   # ← NEW ── “cash”, “CASH”, “Cash”… acceptés
+      accept-case-insensitive-enums: true   # ← “cash”, “CASH”, “Cash”… acceptés
 
   application:
     name: ride-service
@@ -34,24 +34,35 @@ spring:
     show-sql: false
 
   # ─────────── SECURITY (JWT) ──
-  security.oauth2.resourceserver.jwt.secret: ${app.jwt.secret}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          secret: ${app.jwt.secret}
 
   # ─────────── MULTIPART ───────
-  servlet.multipart:
-    max-file-size: -1
-    max-request-size: -1
+  servlet:
+    multipart:
+      max-file-size: -1
+      max-request-size: -1
 
   # ─────────── TASKS ───────────
-  task.scheduling.pool.size: 4
+  task:
+    scheduling:
+      pool:
+        size: 4
 
   # ─────────── MAIL (stub) ─────
   mail:
     host: localhost
     port: 2500
     protocol: smtp
-    properties.mail.smtp:
-      auth: false
-      starttls.enable: false
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
     from: no-reply@ride-service.example.com
 
 # ─────────── SECRETS / KEYS ────
@@ -68,14 +79,32 @@ app:
 # ─────────── EXCHANGE RATES ────
 exchange:
   api:
-    url: https://api.exchangerate.host/latest   # ← point de terminason de votre provider de taux de change
-    key: YOUR_API_KEY_HERE                      # ← remplacez par votre clé (si nécessaire)
+    url: https://api.exchangerate.host/latest     # ← endpoint du provider FX
+    key: YOUR_API_KEY_HERE
 
-# ────────────────────────────────────────
+# ────────────────────────────────────────────────
 #       TARIFICATION PROXIMO 2025
-# ────────────────────────────────────────
+# ────────────────────────────────────────────────
 pricing:
   country:
+
+    ##################################################################
+    #  Bloc de secours « default » – utilisé quand cityId = 0
+    ##################################################################
+    default:
+      cityId: 0
+      currency: USD            # ← devise par défaut
+      ratePerKm:               # ← mêmes valeurs que USA
+        X:        2.90
+        POOL:     2.03
+        MOTO:     1.50
+        COMFORT:  3.20
+        XL:       4.00
+        BLACK:    4.50
+        LUX:      5.80
+        DELIVERY: 2.90
+      platformShare:
+        default: 0.20
 
     france:        # cityId 1 — Paris
       cityId: 1
@@ -147,27 +176,31 @@ spring:
     url: jdbc:mysql://prod-db-host:3306/mobilit?useSSL=true&serverTimezone=UTC
     username: ride_user
     password: ChangeMe!
-    hikari.maximum-pool-size: 30
+    hikari:
+      maximum-pool-size: 30
 
-  servlet.multipart:
-    max-file-size: 25MB
-    max-request-size: 25MB
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
 
   mail:
     host: smtp.example.com
     port: 587
     username: no-reply@ride-service.example.com
     password: ultraSecretPassword
-    properties.mail.smtp:
-      auth: true
-      starttls.enable: true
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
     from: no-reply@ride-service.example.com
 
 app:
   payments:
     provider: stripe
 
-# ─────────── EXCHANGE RATES ────
 exchange:
   api:
     url: https://api.exchangerate.host/latest
