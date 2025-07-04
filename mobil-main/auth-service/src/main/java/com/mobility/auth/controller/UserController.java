@@ -1,10 +1,10 @@
-// src/main/java/com/mobility/auth/controller/UserController.java
 package com.mobility.auth.controller;
 
 import com.mobility.auth.dto.*;
 import com.mobility.auth.model.Address;
 import com.mobility.auth.model.PushToken;
 import com.mobility.auth.service.UserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -15,11 +15,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.List;
 
-/**
- * <h2>Endpoints « Mon Compte » – utilisateur authentifié</h2>
- * Toutes les routes sont préfixées par <code>/api/v1/users/me</code>
- * et nécessitent un JWT Bearer valide.
- */
 @RestController
 @RequestMapping("/api/v1/users/me")
 @RequiredArgsConstructor
@@ -35,6 +30,17 @@ public class UserController {
     ) {
         UserResponse profile = userService.getPublicProfile(jwt.getSubject());
         return ResponseEntity.ok(profile);
+    }
+
+    /* ═══════════ PATCH profil (mobile) ═══════════ */
+
+    @PatchMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<UserResponse> patchMyProfile(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody @Valid UpdateUserRequest body
+    ) {
+        UserResponse updated = userService.updateProfile(jwt.getSubject(), body);
+        return ResponseEntity.ok(updated);
     }
 
     /* ═══════════ Photo de profil (BLOB) ═══════════ */

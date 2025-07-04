@@ -23,10 +23,10 @@ import java.util.stream.Collectors;
 
 /**
  * Service principal de gestion des utilisateurs.
- * <p>
- * • Authentification, tokens, profil, KYC, favoris…<br>
- * • 2025-05 : stockage direct du BLOB photo dans la table <em>users</em>.
- * </p>
+ *
+ * • Authentification, profil, KYC, favoris…
+ * • 2025-05 : photo de profil stockée en BLOB dans la table <em>users</em>.
+ * • 2025-07 : champs chauffeur (permis, inspection, etc.) mis à jour via PATCH / users/me.
  */
 @Slf4j
 @Service
@@ -40,7 +40,7 @@ public class UserService {
     private final PushTokenRepository     pushTokenRepo;
     private final UserDocumentRepository  documentRepo;
     private final RefreshTokenRepository  refreshTokenRepo;
-    private final StorageService          storageService;   // toujours utilisé pour les documents
+    private final StorageService          storageService;
     private final UserMapper              mapper;
     private final PasswordEncoder         passwordEncoder;
     private final AuthenticationManager   authManager;
@@ -54,7 +54,7 @@ public class UserService {
 
     @Transactional
     public TokenResponse signUp(SignUpRequest req, Role role) {
-        if (userRepo.existsByEmail(req.email()))  throw new IllegalArgumentException("EMAIL_TAKEN");
+        if (userRepo.existsByEmail(req.email()))        throw new IllegalArgumentException("EMAIL_TAKEN");
         if (userRepo.existsByPhoneNumber(req.phoneNumber())) throw new IllegalArgumentException("PHONE_TAKEN");
 
         String hash = passwordEncoder.encode(req.password());
@@ -137,20 +137,52 @@ public class UserService {
         return mapper.toResponse(findUser(uid));
     }
 
+    /**
+     * Applique le patch partiel reçu de l’API mobile.
+     * <p>
+     * Toutes les validations de format sont déjà effectuées
+     * par {@link jakarta.validation} sur le DTO {@link UpdateUserRequest}.
+     * Seuls les champs non nuls sont appliqués.
+     */
     @Transactional
     public UserResponse updateProfile(String uid, UpdateUserRequest req) {
         User u = findUser(uid);
-        if (req.firstName() != null)             u.setFirstName(req.firstName());
-        if (req.lastName() != null)              u.setLastName(req.lastName());
-        if (req.preferredLanguage() != null)     u.setPreferredLanguage(req.preferredLanguage());
-        if (req.measurementSystem() != null)     u.setMeasurementSystem(req.measurementSystem());
-        if (req.marketingEmailsOptIn() != null)  u.setMarketingEmailsOptIn(req.marketingEmailsOptIn());
-        if (req.smsOptIn() != null)              u.setSmsOptIn(req.smsOptIn());
+
+        /* ─────────── Identité & préférences ─────────── */
+        if (req.firstName()               != null)  u.setFirstName(req.firstName());
+        if (req.lastName()                != null)  u.setLastName(req.lastName());
+        if (req.preferredLanguage()       != null)  u.setPreferredLanguage(req.preferredLanguage());
+        if (req.measurementSystem()       != null)  u.setMeasurementSystem(req.measurementSystem());
+        if (req.marketingEmailsOptIn()    != null)  u.setMarketingEmailsOptIn(req.marketingEmailsOptIn());
+        if (req.smsOptIn()                != null)  u.setSmsOptIn(req.smsOptIn());
+        if (req.timezone()                != null)  u.setTimezone(req.timezone());
+        if (req.defaultCurrency()         != null)  u.setDefaultCurrency(req.defaultCurrency());
+
+        /* ─────────── Champs chauffeur ajoutés 07-2025 ─────────── */
+        if (req.driverLicenseNumber()     != null)  u.setDriverLicenseNumber(req.driverLicenseNumber());
+        if (req.driverLicenseExp()        != null)  u.setDriverLicenseExp(
+                OffsetDateTime.parse(req.driverLicenseExp() + "T00:00:00Z"));
+        if (req.parcelCapacityKg()        != null)  u.setParcelCapacityKg(req.parcelCapacityKg());
+        if (req.canHandleColdChain()      != null)  u.setCanHandleColdChain(req.canHandleColdChain());
+        if (req.vehicleInspectionStatus() != null)  u.setVehicleInspectionStatus(req.vehicleInspectionStatus());
+        if (req.backgroundCheckStatus()   != null)  u.setBackgroundCheckStatus(req.backgroundCheckStatus());
+
+        /* ─────────── Contact d’urgence (facultatif) ─────────── */
+        if (req.emergencyContact() != null) {
+            u.setEmergencyContactName (req.emergencyContact().name());
+            u.setEmergencyContactPhone(req.emergencyContact().phone());
+        }
+
+        /* ► Les collections (paiements, adresses) restent gérées par
+             leurs contrôleurs dédiés pour éviter des collisions. */
+
         userRepo.save(u);
         return mapper.toResponse(u);
     }
 
     /* ═════════════════════ COMPOSANTS ANNEXES ═════════════════════ */
+    /* … (aucun changement dans les méthodes annexes : paiements, adresses,
+          push-tokens, favoris, documents, etc.  — elles restent identiques) */
 
     /* Paiements */
     @Transactional(readOnly = true)
@@ -224,7 +256,7 @@ public class UserService {
         pushTokenRepo.deleteByTokenAndUser(token, findUser(uid));
     }
 
-    /* KYC & documents */
+    /* KYC & documents – inchangé */
     @Transactional(readOnly = true)
     public KycStatus getKycStatus(String uid) {
         return findUser(uid).getKycStatus();
@@ -260,7 +292,7 @@ public class UserService {
         return KycDocumentPage.builder().documents(docs).build();
     }
 
-    /* Favoris / blocages */
+    /* Favoris / blocages – inchangé */
     @Transactional
     public List<Long> addFavoriteDriver(String uid, Long driverId) {
         User u = findUser(uid);
@@ -298,7 +330,7 @@ public class UserService {
         User u = findUser(uid);
         u.setProfilePicture(data);
         u.setProfilePictureMimeType(mimeType);
-        u.setProfilePictureKey(null);           // nettoyage éventuel
+        u.setProfilePictureKey(null);
         userRepo.save(u);
     }
 
