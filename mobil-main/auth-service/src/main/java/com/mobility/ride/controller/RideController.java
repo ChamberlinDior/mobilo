@@ -1,7 +1,6 @@
 // ─────────────────────────────────────────────────────────────
 //  FILE : src/main/java/com/mobility/ride/controller/RideController.java
-//  v2025-06-15 – « Your Trips / History & Re-planification »
-//  + mises à jour 2025-07-01 pour livraisons interurbain & international
+//  v2025-07-07  ← alias /ride/{id} ajouté pour compatibilité mobile
 // ─────────────────────────────────────────────────────────────
 package com.mobility.ride.controller;
 
@@ -26,15 +25,15 @@ import java.util.List;
  * End-points REST relatifs aux courses (« rides ») et livraisons.
  */
 @RestController
-@RequestMapping("/api/v1/rides")
+@RequestMapping("/api/v1")              // ← base path ramené d’un cran
 @RequiredArgsConstructor
 public class RideController {
 
     private final RideService     rideService;
     private final RideUserService rideUserService;
 
-    /* 1) DEMANDE IMMÉDIATE ou LIVRAISON */
-    @PostMapping("/request")
+    /* ════════════════════════ 1) DEMANDE IMMÉDIATE ════════════════════════ */
+    @PostMapping("/rides/request")
     public ResponseEntity<RideResponse> requestRide(
             @RequestHeader("Authorization") String authHeader,
             @RequestBody @Valid RequestRideRequest request
@@ -53,32 +52,31 @@ public class RideController {
         }
 
         RequestRideRequest sanitized = RequestRideRequest.builder()
-                .riderId      (riderId)
-                .pickupLat    (request.getPickupLat())
-                .pickupLng    (request.getPickupLng())
-                .dropoffLat   (request.getDropoffLat())
-                .dropoffLng   (request.getDropoffLng())
-                .productType  (request.getProductType())
-                .weightKg     (request.getWeightKg())
-                .deliveryZone (zone)
-                .totalFare    (request.getTotalFare())
-                .currency     (request.getCurrency())
-                .options      (request.getOptions())
+                .riderId     (riderId)
+                .pickupLat   (request.getPickupLat())
+                .pickupLng   (request.getPickupLng())
+                .dropoffLat  (request.getDropoffLat())
+                .dropoffLng  (request.getDropoffLng())
+                .productType (request.getProductType())
+                .weightKg    (request.getWeightKg())
+                .deliveryZone(zone)
+                .totalFare   (request.getTotalFare())
+                .currency    (request.getCurrency())
+                .options     (request.getOptions())
                 .build();
 
         RideResponse resp = rideService.requestRide(sanitized);
         return ResponseEntity.status(HttpStatus.CREATED).body(resp);
     }
 
-    /* 2) PLANIFICATION FUTURE ou LIVRAISON PLANIFIÉE */
-    @PostMapping("/schedule")
+    /* ════════════════════════ 2) PLANIFICATION ═══════════════════════════ */
+    @PostMapping("/rides/schedule")
     public ResponseEntity<RideResponse> scheduleRide(
             @RequestHeader("Authorization") String authHeader,
             @RequestBody @Valid ScheduleRideRequest body
     ) {
         Long riderId = rideUserService.getAuthenticatedUserId(authHeader);
 
-        // Validation de poids pour livraisons hors zone LOCAL
         DeliveryZone zone = body.getDeliveryZone() != null
                 ? body.getDeliveryZone()
                 : DeliveryZone.LOCAL;
@@ -109,8 +107,8 @@ public class RideController {
         return ResponseEntity.status(HttpStatus.CREATED).body(resp);
     }
 
-    /* 3) LISTE DES RIDES PLANIFIÉS */
-    @GetMapping("/scheduled")
+    /* ════════════════════════ 3) LISTE DES RIDES PLANIFIÉS ════════════════ */
+    @GetMapping("/rides/scheduled")
     public ResponseEntity<List<RideResponse>> listScheduled(
             @RequestHeader("Authorization") String authHeader) {
 
@@ -118,8 +116,8 @@ public class RideController {
         return ResponseEntity.ok(rideService.listScheduled(riderId));
     }
 
-    /* 4) HISTORIQUE DES RIDES */
-    @GetMapping("/history")
+    /* ════════════════════════ 4) HISTORIQUE ══════════════════════════════ */
+    @GetMapping("/rides/history")
     public ResponseEntity<List<RideResponse>> listHistory(
             @RequestHeader("Authorization") String authHeader) {
 
@@ -127,8 +125,8 @@ public class RideController {
         return ResponseEntity.ok(rideService.listHistory(riderId));
     }
 
-    /* 5) RE-PLANIFICATION */
-    @PatchMapping("/{rideId:\\d+}/reschedule")
+    /* ════════════════════════ 5) RE-PLANIFICATION ════════════════════════ */
+    @PatchMapping("/rides/{rideId:\\d+}/reschedule")
     public ResponseEntity<Void> reschedule(
             @PathVariable Long rideId,
             @RequestParam("scheduledAt")
@@ -139,9 +137,17 @@ public class RideController {
         return ResponseEntity.noContent().build();
     }
 
-    /* 6) CONSULTATION INDIVIDUELLE */
-    @GetMapping("/{rideId:\\d+}")
+    /* ════════════════════════ 6) CONSULTATION STANDARD ═══════════════════ */
+    @GetMapping("/rides/{rideId:\\d+}")
     public ResponseEntity<RideResponse> getRide(@PathVariable Long rideId) {
         return ResponseEntity.ok(rideService.getRide(rideId));
+    }
+
+    /* ════════════════════════ 7) ALIAS COMPATIBILITÉ MOBILE ══════════════ *
+       Anciennes versions de l’app utilisaient le singulier `/ride/{id}`.
+       On délègue simplement vers la méthode ci-dessus.                  */
+    @GetMapping("/ride/{id}")
+    public ResponseEntity<RideResponse> getRideAlias(@PathVariable Long id) {
+        return getRide(id);
     }
 }

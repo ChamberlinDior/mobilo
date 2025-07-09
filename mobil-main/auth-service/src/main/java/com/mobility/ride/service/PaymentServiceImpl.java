@@ -1,11 +1,7 @@
-/* ------------------------------------------------------------------
- * Implémentation « noop » du port de paiement.
- *  • 100 % « stub » : se contente d’écrire des logs, sans appeler
- *    la moindre passerelle bancaire.
- *  • Activée uniquement quand le profil Spring ► local ◄ est actif.
- *    En production, basculez sur une implémentation Stripe / Paystack
- *    (ou changez simplement de @Profile).
- * ------------------------------------------------------------------ */
+// ─────────────────────────────────────────────────────────────
+//  FILE : src/main/java/com/mobility/ride/service/PaymentServiceImpl.java
+//  v2025-09-02 – stub « local » 100 % logs
+// ─────────────────────────────────────────────────────────────
 package com.mobility.ride.service;
 
 import com.mobility.ride.model.Ride;
@@ -16,43 +12,38 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 
+/**
+ * Implémentation <em>stub</em> (no-op) du port {@link PaymentService}.
+ * <ul>
+ *   <li>Aucun appel sortant vers un PSP ; uniquement des logs.</li>
+ *   <li>Activée quand le profil Spring <strong>local</strong> est sélectionné.</li>
+ *   <li>En production, fournir une implémentation Stripe / Paystack /
+ *       Apple-Pay… dans un autre profil (<code>prod</code>, <code>stripe</code>, …).</li>
+ * </ul>
+ */
 @Slf4j
 @Service
-@Profile("local")   // -> désactivé dès qu’un autre profil est sélectionné
+@Profile("local")
 public class PaymentServiceImpl implements PaymentService {
 
-    /**
-     * Nom symbolique du prestataire (pour les logs).
-     * On laisse la propriété overridable :  spring.profiles.active=local
-     * + app.payments.provider=stripe   donnera des logs « [PAYMENT STRIPE] … ».
-     */
+    /** Libellé du provider à afficher dans les traces. */
     @Value("${app.payments.provider:stub}")
     private String providerName;
 
-    /* ──────────────────────────────────────────────────────────────
-       1) Pré-autorisation (planification / demande immédiate)
-       ────────────────────────────────────────────────────────────── */
+    /* ───────────────────────────── 1) AUTHORIZE ────────────────────────── */
     @Override
     public void authorizeRide(Ride ride,
                               BigDecimal amount,
                               String currency) {
 
         log.info("[PAYMENT {}] Authorize {} {} — ride #{} (paymentMethodId={})",
-                providerName.toUpperCase(), amount, currency, ride.getId(),
-                ride.getPaymentMethodId());
+                providerName.toUpperCase(), amount, currency,
+                ride.getId(), ride.getPaymentMethodId());
 
-        /* ---------------------------------------------------------
-         * En environnement « local » on s’arrête ici.
-         *  ‣ En prod, appelez ici l’API de votre PSP :
-         *      - Stripe   → PaymentIntents + confirmation automatique
-         *      - Paystack → Transaction initialise & charge_authorization
-         *      - …         etc.
-         * --------------------------------------------------------- */
+        // (stub) : rien d’autre à faire.
     }
 
-    /* ──────────────────────────────────────────────────────────────
-       2) Frais d’annulation / no-show
-       ────────────────────────────────────────────────────────────── */
+    /* ──────────────────────── 2) CANCELLATION FEE ─────────────────────── */
     @Override
     public void captureCancellationFee(Ride ride,
                                        BigDecimal amount,
@@ -61,6 +52,20 @@ public class PaymentServiceImpl implements PaymentService {
         log.info("[PAYMENT {}] Capture cancellation fee {} {} — ride #{}",
                 providerName.toUpperCase(), amount, currency, ride.getId());
 
-        // TODO (prod) : appel réel à la passerelle pour capturer les fonds.
+        // (stub) : aucune requête PSP.
+    }
+
+    /* ───────────────────────── 3) FINAL CAPTURE ───────────────────────── */
+    @Override
+    public void captureRideCharge(Ride ride) {
+
+        BigDecimal amount   = ride.getTotalFare(); // inclut waitFee + extras
+        String     currency = ride.getCurrency();
+
+        log.info("[PAYMENT {}] Capture ride charge {} {} — ride #{} (status={})",
+                providerName.toUpperCase(), amount, currency,
+                ride.getId(), ride.getStatus());
+
+        // (stub) : pas d’appel externe.
     }
 }
