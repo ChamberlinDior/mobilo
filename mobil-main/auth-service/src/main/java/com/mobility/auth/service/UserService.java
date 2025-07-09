@@ -1,3 +1,7 @@
+// ─────────────────────────────────────────────────────────────
+//  FILE : src/main/java/com/mobility/auth/service/UserService.java
+//  v2025-09-13 – + getProfilePictureById(Long userId)
+// ─────────────────────────────────────────────────────────────
 package com.mobility.auth.service;
 
 import com.mobility.auth.dto.*;
@@ -27,6 +31,7 @@ import java.util.stream.Collectors;
  * • Authentification, profil, KYC, favoris…
  * • 2025-05 : photo de profil stockée en BLOB dans la table <em>users</em>.
  * • 2025-07 : champs chauffeur (permis, inspection, etc.) mis à jour via PATCH / users/me.
+ * • 2025-09-13 : lecture de photo par ID numérique (getProfilePictureById).
  */
 @Slf4j
 @Service
@@ -54,7 +59,7 @@ public class UserService {
 
     @Transactional
     public TokenResponse signUp(SignUpRequest req, Role role) {
-        if (userRepo.existsByEmail(req.email()))        throw new IllegalArgumentException("EMAIL_TAKEN");
+        if (userRepo.existsByEmail(req.email()))             throw new IllegalArgumentException("EMAIL_TAKEN");
         if (userRepo.existsByPhoneNumber(req.phoneNumber())) throw new IllegalArgumentException("PHONE_TAKEN");
 
         String hash = passwordEncoder.encode(req.password());
@@ -139,9 +144,6 @@ public class UserService {
 
     /**
      * Applique le patch partiel reçu de l’API mobile.
-     * <p>
-     * Toutes les validations de format sont déjà effectuées
-     * par {@link jakarta.validation} sur le DTO {@link UpdateUserRequest}.
      * Seuls les champs non nuls sont appliqués.
      */
     @Transactional
@@ -158,7 +160,7 @@ public class UserService {
         if (req.timezone()                != null)  u.setTimezone(req.timezone());
         if (req.defaultCurrency()         != null)  u.setDefaultCurrency(req.defaultCurrency());
 
-        /* ─────────── Champs chauffeur ajoutés 07-2025 ─────────── */
+        /* ─────────── Champs chauffeur (07-2025) ─────────── */
         if (req.driverLicenseNumber()     != null)  u.setDriverLicenseNumber(req.driverLicenseNumber());
         if (req.driverLicenseExp()        != null)  u.setDriverLicenseExp(
                 OffsetDateTime.parse(req.driverLicenseExp() + "T00:00:00Z"));
@@ -167,22 +169,18 @@ public class UserService {
         if (req.vehicleInspectionStatus() != null)  u.setVehicleInspectionStatus(req.vehicleInspectionStatus());
         if (req.backgroundCheckStatus()   != null)  u.setBackgroundCheckStatus(req.backgroundCheckStatus());
 
-        /* ─────────── Contact d’urgence (facultatif) ─────────── */
+        /* ─────────── Contact d’urgence ─────────── */
         if (req.emergencyContact() != null) {
             u.setEmergencyContactName (req.emergencyContact().name());
             u.setEmergencyContactPhone(req.emergencyContact().phone());
         }
-
-        /* ► Les collections (paiements, adresses) restent gérées par
-             leurs contrôleurs dédiés pour éviter des collisions. */
 
         userRepo.save(u);
         return mapper.toResponse(u);
     }
 
     /* ═════════════════════ COMPOSANTS ANNEXES ═════════════════════ */
-    /* … (aucun changement dans les méthodes annexes : paiements, adresses,
-          push-tokens, favoris, documents, etc.  — elles restent identiques) */
+    /* … (paiements, adresses, push-tokens, favoris, documents : inchangés) */
 
     /* Paiements */
     @Transactional(readOnly = true)
@@ -256,7 +254,7 @@ public class UserService {
         pushTokenRepo.deleteByTokenAndUser(token, findUser(uid));
     }
 
-    /* KYC & documents – inchangé */
+    /* KYC & documents */
     @Transactional(readOnly = true)
     public KycStatus getKycStatus(String uid) {
         return findUser(uid).getKycStatus();
@@ -292,7 +290,7 @@ public class UserService {
         return KycDocumentPage.builder().documents(docs).build();
     }
 
-    /* Favoris / blocages – inchangé */
+    /* Favoris / blocages */
     @Transactional
     public List<Long> addFavoriteDriver(String uid, Long driverId) {
         User u = findUser(uid);
@@ -322,7 +320,7 @@ public class UserService {
         return List.copyOf(u.getBlockedUsers());
     }
 
-    /* ═════════════════ PHOTO DE PROFIL (BLOB) ═════════════════ */
+    /* ═══════════════ PHOTO DE PROFIL (BLOB) ═══════════════ */
 
     @Transactional
     public void saveProfilePicture(String uid, String mimeType, byte[] data) {
@@ -337,6 +335,15 @@ public class UserService {
     @Transactional(readOnly = true)
     public ProfilePicture getProfilePicture(String uid) {
         User u = findUser(uid);
+        byte[] img = u.getProfilePicture();
+        return (img == null) ? null : new ProfilePicture(img, u.getProfilePictureMimeType());
+    }
+
+    /** ▼ NOUVEAU : récupération de la photo par ID interne (Long) */
+    @Transactional(readOnly = true)
+    public ProfilePicture getProfilePictureById(Long userId) {
+        User u = userRepo.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("USER_NOT_FOUND"));
         byte[] img = u.getProfilePicture();
         return (img == null) ? null : new ProfilePicture(img, u.getProfilePictureMimeType());
     }
