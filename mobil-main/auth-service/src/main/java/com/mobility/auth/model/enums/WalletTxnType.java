@@ -3,10 +3,21 @@
  * ------------------------------------------------------------------*/
 package com.mobility.auth.model.enums;
 
+/**
+ * Types de mouvements dans la table <code>wallet_transactions</code>.
+ * Le signe du montant est toujours :
+ *   • positif  →  crédit  (argent qui entre)
+ *   • négatif  →  débit   (argent qui sort)
+ */
 public enum WalletTxnType {
-    TOP_UP,            // ↗
-    RIDE_PAYMENT,      // ↘ (wallet / CB / PayPal…)
-    CASH_PAYMENT,      // ↘ Nouveau – règlement direct au chauffeur
-    REFUND,            // ↗
-    ADJUSTMENT         // ±
+
+    /* ——↑ crédits—— */
+    TOP_UP,            // recharge par carte / mobile money
+    REFUND,            // remboursement, goodwill, geste co
+
+    /* ——↓ débits —— */
+    RIDE_PAYMENT,      // paiement automatique d’une course
+    CASH_PAYMENT,      // paiement direct chauffeur — historique uniquement
+    WITHDRAWAL,        // retrait du solde vers un compte bancaire  ← AJOUTÉ
+    ADJUSTMENT         // correction manuelle ±
 }

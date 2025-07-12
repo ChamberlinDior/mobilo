@@ -1,29 +1,53 @@
-// ──────────────────────────────────────────────────────────────
-//  FILE : src/main/java/com/mobility/ride/service/DriverRideActionServiceImpl.java
-//  v2025-09-08 – transaction globale par méthode
-// ──────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────
+ *  FILE : src/main/java/com/mobility/ride/service/DriverRideActionServiceImpl.java
+ *  v2025-10-11 – accept SCHEDULED ≤ 25 min
+ * ────────────────────────────────────────────────────────────── */
 package com.mobility.ride.service;
 
+import com.mobility.ride.model.Ride;
+import com.mobility.ride.model.RideStatus;
+import com.mobility.ride.repository.RideRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional      // ← toutes les méthodes sont maintenant transactionnelles
+@Transactional          // toutes les méthodes sont transactionnelles
 public class DriverRideActionServiceImpl implements DriverRideActionService {
+
+    private static final int ACCEPT_WINDOW_MIN = 25;       // ← fenêtre planifiées
 
     private final RideFlowService    rideFlow;
     private final RideLockingService locker;
+    private final RideRepository     rideRepository;
 
     /* 1) ACCEPT / DECLINE -------------------------------------------------- */
 
     @Override
     public void accept(Long rideId, Long driverId) {
-        locker.lockRide(rideId,
-                () -> rideFlow.accept(rideId, driverId));
+        locker.lockRide(rideId, () -> {
+
+            /* ─── Contrôle “≤ 25 min” pour les planifiées ─── */
+            Ride ride = rideRepository.findById(rideId).orElseThrow();
+            if (ride.getStatus() == RideStatus.SCHEDULED) {
+                OffsetDateTime now   = OffsetDateTime.now();
+                OffsetDateTime gate  = now.plusMinutes(ACCEPT_WINDOW_MIN);
+                if (ride.getScheduledAt().isAfter(gate)) {
+                    throw new IllegalStateException(
+                            "Trop tôt : vous pourrez accepter à partir de " +
+                                    ride.getScheduledAt().minusMinutes(ACCEPT_WINDOW_MIN)
+                                            .toLocalTime());
+                }
+            }
+
+            /* ─── Transition métier ─── */
+            rideFlow.accept(rideId, driverId);
+        });
     }
 
     @Override

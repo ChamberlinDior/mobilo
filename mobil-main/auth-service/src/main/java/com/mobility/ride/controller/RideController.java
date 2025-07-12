@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────
 //  FILE : src/main/java/com/mobility/ride/controller/RideController.java
-//  v2025-07-07  ← alias /ride/{id} ajouté pour compatibilité mobile
+//  v2025-10-07 – endpoint /complete corrigé (plus de toBuilder)
 // ─────────────────────────────────────────────────────────────
 package com.mobility.ride.controller;
 
@@ -8,6 +8,7 @@ import com.mobility.ride.dto.RequestRideRequest;
 import com.mobility.ride.dto.RideResponse;
 import com.mobility.ride.dto.ScheduleRideRequest;
 import com.mobility.ride.model.DeliveryZone;
+import com.mobility.ride.service.RideLifecycleService;
 import com.mobility.ride.service.RideService;
 import com.mobility.ride.service.RideUserService;
 import jakarta.validation.Valid;
@@ -18,73 +19,68 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 
-/**
- * End-points REST relatifs aux courses (« rides ») et livraisons.
- */
 @RestController
-@RequestMapping("/api/v1")              // ← base path ramené d’un cran
+@RequestMapping("/api/v1")
 @RequiredArgsConstructor
 public class RideController {
 
-    private final RideService     rideService;
-    private final RideUserService rideUserService;
+    private final RideService          rideService;
+    private final RideUserService      rideUserService;
+    private final RideLifecycleService rideLifecycleSvc;
 
-    /* ════════════════════════ 1) DEMANDE IMMÉDIATE ════════════════════════ */
+    /* ═════════════════════ 1) DEMANDE IMMÉDIATE ═══════════════════════ */
     @PostMapping("/rides/request")
     public ResponseEntity<RideResponse> requestRide(
-            @RequestHeader("Authorization") String authHeader,
-            @RequestBody @Valid RequestRideRequest request
-    ) {
-        Long riderId = rideUserService.getAuthenticatedUserId(authHeader);
+            @RequestHeader("Authorization") String auth,
+            @RequestBody @Valid RequestRideRequest req) {
 
-        // Validation de poids pour livraisons hors zone LOCAL
-        DeliveryZone zone = request.getDeliveryZone() != null
-                ? request.getDeliveryZone()
+        Long riderId = rideUserService.getAuthenticatedUserId(auth);
+
+        DeliveryZone zone = req.getDeliveryZone() != null
+                ? req.getDeliveryZone()
                 : DeliveryZone.LOCAL;
-        if (zone != DeliveryZone.LOCAL && request.getWeightKg() == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Weight (kg) must be provided for interurban and international deliveries"
-            );
+        if (zone != DeliveryZone.LOCAL && req.getWeightKg() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Weight (kg) must be provided for interurban and international deliveries");
         }
 
         RequestRideRequest sanitized = RequestRideRequest.builder()
                 .riderId     (riderId)
-                .pickupLat   (request.getPickupLat())
-                .pickupLng   (request.getPickupLng())
-                .dropoffLat  (request.getDropoffLat())
-                .dropoffLng  (request.getDropoffLng())
-                .productType (request.getProductType())
-                .weightKg    (request.getWeightKg())
+                .pickupLat   (req.getPickupLat())
+                .pickupLng   (req.getPickupLng())
+                .dropoffLat  (req.getDropoffLat())
+                .dropoffLng  (req.getDropoffLng())
+                .productType (req.getProductType())
+                .weightKg    (req.getWeightKg())
                 .deliveryZone(zone)
-                .totalFare   (request.getTotalFare())
-                .currency    (request.getCurrency())
-                .options     (request.getOptions())
+                .totalFare   (req.getTotalFare())
+                .currency    (req.getCurrency())
+                .options     (req.getOptions())
                 .build();
 
-        RideResponse resp = rideService.requestRide(sanitized);
-        return ResponseEntity.status(HttpStatus.CREATED).body(resp);
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(rideService.requestRide(sanitized));
     }
 
-    /* ════════════════════════ 2) PLANIFICATION ═══════════════════════════ */
+    /* ═════════════════════ 2) PLANIFICATION ═══════════════════════════ */
     @PostMapping("/rides/schedule")
     public ResponseEntity<RideResponse> scheduleRide(
-            @RequestHeader("Authorization") String authHeader,
-            @RequestBody @Valid ScheduleRideRequest body
-    ) {
-        Long riderId = rideUserService.getAuthenticatedUserId(authHeader);
+            @RequestHeader("Authorization") String auth,
+            @RequestBody @Valid ScheduleRideRequest body) {
+
+        Long riderId = rideUserService.getAuthenticatedUserId(auth);
 
         DeliveryZone zone = body.getDeliveryZone() != null
                 ? body.getDeliveryZone()
                 : DeliveryZone.LOCAL;
         if (zone != DeliveryZone.LOCAL && body.getWeightKg() == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Weight (kg) must be provided for interurban and international deliveries"
-            );
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Weight (kg) must be provided for interurban and international deliveries");
         }
 
         ScheduleRideRequest sanitized = ScheduleRideRequest.builder()
@@ -103,29 +99,30 @@ public class RideController {
                 .currency       (body.getCurrency())
                 .build();
 
-        RideResponse resp = rideService.scheduleRide(sanitized);
-        return ResponseEntity.status(HttpStatus.CREATED).body(resp);
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(rideService.scheduleRide(sanitized));
     }
 
-    /* ════════════════════════ 3) LISTE DES RIDES PLANIFIÉS ════════════════ */
+    /* ═════════════════════ 3) LISTE PLANIFIÉES ════════════════════════ */
     @GetMapping("/rides/scheduled")
     public ResponseEntity<List<RideResponse>> listScheduled(
-            @RequestHeader("Authorization") String authHeader) {
+            @RequestHeader("Authorization") String auth) {
 
-        Long riderId = rideUserService.getAuthenticatedUserId(authHeader);
+        Long riderId = rideUserService.getAuthenticatedUserId(auth);
         return ResponseEntity.ok(rideService.listScheduled(riderId));
     }
 
-    /* ════════════════════════ 4) HISTORIQUE ══════════════════════════════ */
+    /* ═════════════════════ 4) HISTORIQUE RIDER ════════════════════════ */
     @GetMapping("/rides/history")
     public ResponseEntity<List<RideResponse>> listHistory(
-            @RequestHeader("Authorization") String authHeader) {
+            @RequestHeader("Authorization") String auth) {
 
-        Long riderId = rideUserService.getAuthenticatedUserId(authHeader);
+        Long riderId = rideUserService.getAuthenticatedUserId(auth);
         return ResponseEntity.ok(rideService.listHistory(riderId));
     }
 
-    /* ════════════════════════ 5) RE-PLANIFICATION ════════════════════════ */
+    /* ═════════════════════ 5) RE-PLANIFICATION ════════════════════════ */
     @PatchMapping("/rides/{rideId:\\d+}/reschedule")
     public ResponseEntity<Void> reschedule(
             @PathVariable Long rideId,
@@ -137,17 +134,28 @@ public class RideController {
         return ResponseEntity.noContent().build();
     }
 
-    /* ════════════════════════ 6) CONSULTATION STANDARD ═══════════════════ */
+    /* ═════════════════════ 6) DÉTAIL D’UNE COURSE ═════════════════════ */
     @GetMapping("/rides/{rideId:\\d+}")
     public ResponseEntity<RideResponse> getRide(@PathVariable Long rideId) {
         return ResponseEntity.ok(rideService.getRide(rideId));
     }
 
-    /* ════════════════════════ 7) ALIAS COMPATIBILITÉ MOBILE ══════════════ *
-       Anciennes versions de l’app utilisaient le singulier `/ride/{id}`.
-       On délègue simplement vers la méthode ci-dessus.                  */
+    /* ═════════════════════ 7) ALIAS SINGULIER (mobile) ════════════════ */
     @GetMapping("/ride/{id}")
     public ResponseEntity<RideResponse> getRideAlias(@PathVariable Long id) {
         return getRide(id);
+    }
+
+    /* ═════════════════════ 8) TERMINER LA COURSE (driver) ═════════════ */
+    @PatchMapping("/rides/{rideId:\\d+}/complete")
+    public ResponseEntity<Void> completeRide(
+            @PathVariable Long rideId,
+            @RequestParam  BigDecimal finalFare) {
+
+        /* Appel direct au service de cycle de vie.
+           Si vous souhaitez restreindre l’accès au driver, placez ici
+           une vérification avec rideUserService + rideService.getRide(…). */
+        rideLifecycleSvc.completeRide(rideId, finalFare);
+        return ResponseEntity.noContent().build();
     }
 }

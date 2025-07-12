@@ -12,7 +12,8 @@ import com.mobility.auth.repository.WalletTransactionRepository;
 import com.mobility.ride.service.PaymentService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -23,12 +24,12 @@ public class WalletServiceImpl implements WalletService {
 
     private final UserRepository              userRepo;
     private final WalletTransactionRepository txnRepo;
-    private final PaymentService paymentService;   // stub Stripe en local
-    private final PaymentMethodService        paymentMethodSvc; // vérif ownership
+    private final PaymentService              paymentService;
+    private final PaymentMethodService        paymentMethodSvc;
 
     /* =============================================================
-     * 1) Rechargement – TOP-UP
-     * ============================================================*/
+       1) Rechargement – TOP_UP
+       ============================================================*/
     @Override
     @Transactional
     public WalletBalanceResponse topUp(String uid, WalletTopUpRequest req) {
@@ -36,12 +37,12 @@ public class WalletServiceImpl implements WalletService {
         User user = userRepo.findByExternalUid(uid)
                 .orElseThrow(() -> new IllegalArgumentException("USER_NOT_FOUND"));
 
-        // 1. Vérifier propriété du moyen de paiement
-        paymentMethodSvc.setDefault(uid, Long.parseLong(req.getPaymentMethodId())); // check simple
+        // 1. Vérifier la propriété du moyen de paiement
+        paymentMethodSvc.setDefault(uid, Long.parseLong(req.getPaymentMethodId()));
 
-        // 2. Débit PSP (stub local) – génère un ID factice
+        // 2. Débit PSP
         paymentService.authorizeRide(null, req.getAmount(), req.getCurrency());
-        String chargeRef = "CHARGE-" + System.currentTimeMillis(); // stub only
+        String chargeRef = "CHARGE-" + System.currentTimeMillis();   // stub
 
         // 3. Créditer le solde
         BigDecimal newBalance = user.getWalletBalance().add(req.getAmount());
@@ -49,14 +50,13 @@ public class WalletServiceImpl implements WalletService {
         userRepo.save(user);
 
         // 4. Historiser la transaction
-        WalletTransaction txn = WalletTransaction.builder()
-                .user(user)
-                .type(WalletTxnType.TOP_UP)
-                .amount(req.getAmount())
-                .currency(req.getCurrency())
+        txnRepo.save(WalletTransaction.builder()
+                .user     (user)
+                .type     (WalletTxnType.TOP_UP)
+                .amount   (req.getAmount())
+                .currency (req.getCurrency())
                 .reference(chargeRef)
-                .build();
-        txnRepo.save(txn);
+                .build());
 
         return new WalletBalanceResponse(
                 newBalance,
@@ -65,8 +65,8 @@ public class WalletServiceImpl implements WalletService {
     }
 
     /* =============================================================
-     * 2) Consultation solde
-     * ============================================================*/
+       2) Consultation solde
+       ============================================================*/
     @Override
     public WalletBalanceResponse getBalance(String uid) {
         User u = userRepo.findByExternalUid(uid)
@@ -78,20 +78,54 @@ public class WalletServiceImpl implements WalletService {
     }
 
     /* =============================================================
-     * 3) Historique paginé
-     * ============================================================*/
+       3) Historique paginé
+       ============================================================*/
     @Override
     public Page<WalletTransactionResponse> listTransactions(String uid, Pageable pageable) {
         User u = userRepo.findByExternalUid(uid)
                 .orElseThrow(() -> new IllegalArgumentException("USER_NOT_FOUND"));
         return txnRepo.findByUserOrderByCreatedAtDesc(u, pageable)
                 .map(t -> WalletTransactionResponse.builder()
-                        .id(t.getId())
-                        .type(t.getType())
-                        .amount(t.getAmount())
-                        .currency(t.getCurrency())
+                        .id       (t.getId())
+                        .type     (t.getType())
+                        .amount   (t.getAmount())
+                        .currency (t.getCurrency())
                         .reference(t.getReference())
                         .createdAt(t.getCreatedAt())
                         .build());
+    }
+
+    /* =============================================================
+       4) Retrait (driver) – crédite un débit WITHDRAWAL
+       ============================================================*/
+    @Override
+    @Transactional
+    public WalletBalanceResponse withdraw(String uid, BigDecimal amount) {
+
+        User driver = userRepo.findByExternalUid(uid)
+                .orElseThrow(() -> new IllegalArgumentException("USER_NOT_FOUND"));
+
+        if (driver.getWalletBalance().compareTo(amount) < 0) {
+            throw new IllegalArgumentException("INSUFFICIENT_FUNDS");
+        }
+
+        // appel PSP / virement SEPA en pratique …
+        paymentService.transferToBank(driver, amount, driver.getDefaultCurrency());
+
+        BigDecimal newBal = driver.getWalletBalance().subtract(amount);
+        driver.setWalletBalance(newBal);
+        userRepo.save(driver);
+
+        txnRepo.save(WalletTransaction.builder()
+                .user     (driver)
+                .type     (WalletTxnType.WITHDRAWAL)
+                .amount   (amount.negate())
+                .currency (driver.getDefaultCurrency())
+                .reference("PAYOUT-" + System.currentTimeMillis())
+                .build());
+
+        return new WalletBalanceResponse(newBal,
+                driver.getPromoBalance(),
+                driver.getCreditBalance());
     }
 }
