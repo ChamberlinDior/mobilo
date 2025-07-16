@@ -1,10 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  FILE : src/main/java/com/mobility/ride/service/RideFlowService.java
-//  v2025-09-05 – payload enrichi lors de l’ACCEPT
-//               • Driver/Rider/Product snippets  (→ écran « match »)
-//               • diffusion STOMP  /topic/ride/{id}
-//               • cycle de beans résolu avec @Lazy
-//               • corps de méthodes ré-injectés (plus d’erreurs “missing return”)
+//  v2025-10-11 – ouvre automatiquement la room de chat après ACCEPT
 // ─────────────────────────────────────────────────────────────────────────────
 package com.mobility.ride.service;
 
@@ -29,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.Map;          // ← NEW
 
 @Slf4j
 @Service
@@ -93,13 +90,18 @@ public class RideFlowService {
                 r.getProductType().getIconUrl()
         );
 
-        /* 4. Construction du payload */
+        /* 4. Construction du payload “match” */
         RideAcceptedPayload payload = new RideAcceptedPayload(
                 r.getId(), driver, rider, product, r.getAcceptedAt());
 
-        /* 5. Diffusion temps-réel */
-        ws.convertAndSend("/topic/ride/" + r.getId(), payload);   // écrans rider & driver
-        publishOps(r);                                            // monitoring interne
+        /* 5-a. Diffusion temps-réel “match” */
+        ws.convertAndSend("/topic/ride/" + r.getId(), payload);
+
+        /* 5-b. Ouvre la room de chat (notif front) */
+        ws.convertAndSend("/topic/ride/" + r.getId() + "/chat/open",
+                Map.of("rideId", r.getId()));
+
+        publishOps(r);  // monitoring interne
 
         log.info("[FLOW] Ride #{} ACCEPTED by driver #{}", r.getId(), driverId);
     }

@@ -1,6 +1,7 @@
 // ============================================================================
-//  FILE    : ChatController.java
-// ----------------------------------------------------------------------------
+//  FILE : src/main/java/com/mobility/ride/controller/ChatController.java
+//  v2025-10-11 – ajout WebSocket STOMP /chat.send.{rideId}
+// ============================================================================
 package com.mobility.ride.controller;
 
 import com.mobility.ride.dto.ChatMessageRequest;
@@ -17,17 +18,22 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.handler.annotation.DestinationVariable;
+import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.List;
 
 /**
  * Messagerie in-app entre passager et conducteur.
  *
- * Désormais sécurisé :
- * 1. On extrait l’utilisateur authentifié via JWT (AuthenticatedUserService).
- * 2. On vérifie que cet utilisateur est bien rider ou driver de la course (RideParticipationService).
- * 3. Pour l’envoi, on s’assure aussi que senderId dans le corps correspond à l’utilisateur authentifié.
+ * <ul>
+ *   <li>REST : listing + post fallback (devices sans WS).</li>
+ *   <li>WebSocket (STOMP) : /app/chat.send.{rideId} ➜ /topic/ride/{rideId}/chat.</li>
+ *   <li>Sécurité : seul un participant (rider | driver) peut publier ou lire.</li>
+ * </ul>
  */
 @Tag(name = "Chat", description = "In-app chat between rider & driver")
 @RestController
@@ -35,71 +41,67 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ChatController {
 
-    private final ChatService chatService;
+    private final ChatService              chatService;
     private final RideParticipationService participationService;
     private final AuthenticatedUserService authenticatedUserService;
+    private final SimpMessagingTemplate    simp;                  // ← NEW
 
-    /* ═══════════ Récupération du thread ═══════════ */
-    @Operation(
-            summary = "List chat messages",
+    /* ═══════════ Récupération du thread (REST) ═══════════ */
+    @Operation(summary = "List chat messages",
             responses = @ApiResponse(
                     responseCode = "200",
-                    description = "Chat thread",
-                    content = @Content(schema = @Schema(implementation = ChatMessage.class))
-            )
-    )
+                    content = @Content(schema = @Schema(implementation = ChatMessage.class))))
     @GetMapping("/messages")
     public ResponseEntity<List<ChatMessage>> list(
             @PathVariable Long rideId,
-            HttpServletRequest request
-    ) {
-        // 1) Extrait l’ID interne de l’utilisateur authentifié
+            HttpServletRequest req) {
+
         Long userId = authenticatedUserService.getAuthenticatedUserId(
-                request.getHeader("Authorization")
-        );
+                req.getHeader("Authorization"));
 
-        // 2) Vérifie que l’utilisateur participe à la course (rider ou driver)
-        if (!participationService.isParticipantOfRide(rideId, userId)) {
+        if (!participationService.isParticipantOfRide(rideId, userId))
             return ResponseEntity.status(403).build();
-        }
 
-        // 3) Récupère et retourne la liste des messages
-        List<ChatMessage> thread = chatService.listMessages(rideId);
-        return ResponseEntity.ok(thread);
+        return ResponseEntity.ok(chatService.listMessages(rideId));
     }
 
-    /* ═══════════ Envoi d’un message ═══════════ */
-    @Operation(
-            summary = "Send a chat message",
+    /* ═══════════ Envoi d’un message (REST fallback) ═══════════ */
+    @Operation(summary = "Send a chat message (HTTP fallback)",
             responses = @ApiResponse(
                     responseCode = "201",
-                    description = "Message sent",
-                    content = @Content(schema = @Schema(implementation = ChatMessage.class))
-            )
-    )
+                    content = @Content(schema = @Schema(implementation = ChatMessage.class))))
     @PostMapping("/messages")
     public ResponseEntity<ChatMessage> send(
             @PathVariable Long rideId,
             @RequestBody @Valid ChatMessageRequest body,
-            HttpServletRequest request
-    ) {
-        // 1) Extrait l’ID interne de l’utilisateur authentifié
+            HttpServletRequest req) {
+
         Long userId = authenticatedUserService.getAuthenticatedUserId(
-                request.getHeader("Authorization")
-        );
+                req.getHeader("Authorization"));
 
-        // 2) Vérifie que senderId dans le corps correspond à l’utilisateur authentifié
-        if (!userId.equals(body.senderId())) {
+        if (!userId.equals(body.senderId())
+                || !participationService.isParticipantOfRide(rideId, userId))
             return ResponseEntity.status(403).build();
-        }
 
-        // 3) Vérifie que l’utilisateur participe à la course
-        if (!participationService.isParticipantOfRide(rideId, userId)) {
-            return ResponseEntity.status(403).build();
-        }
+        ChatMessage saved = chatService.sendMessage(rideId, body);
+        // diffuse aux sockets connectées
+        simp.convertAndSend("/topic/ride/" + rideId + "/chat", saved);
+        return ResponseEntity.status(201).body(saved);
+    }
 
-        // 4) Enregistre et renvoie le message
-        ChatMessage msg = chatService.sendMessage(rideId, body);
-        return ResponseEntity.status(201).body(msg);
+    /* ═══════════ Envoi d’un message (WebSocket STOMP) ═══════════ */
+    @MessageMapping("/chat.send.{rideId}")          // côté client : /app/chat.send.{rideId}
+    public void wsSend(@DestinationVariable Long rideId,
+                       @Valid ChatMessageRequest body,
+                       Principal principal) {
+
+        Long userId = Long.valueOf(principal.getName());  // JWT sub = internal id
+
+        if (!userId.equals(body.senderId())
+                || !participationService.isParticipantOfRide(rideId, userId))
+            return;   // 403 silencieux côté WS
+
+        ChatMessage saved = chatService.sendMessage(rideId, body);
+        simp.convertAndSend("/topic/ride/" + rideId + "/chat", saved);
     }
 }
