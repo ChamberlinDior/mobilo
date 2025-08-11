@@ -1,10 +1,10 @@
 /* ─────────────────────────────────────────────────────────────
  *  FILE : src/main/java/com/mobility/ride/service/RideService.java
- *  v2025-10-07  « rider-photo-url-fix + crédit driver »
+ *  v2025‑10‑08  « rider‑photo‑url‑fix + infos driver complètes »
  *
  *     • Toutes les opérations CRUD + finishRide()
  *     • Crédit automatique du chauffeur via RideLifecycleService
- *     • Génération d’URL ou Base-64 inline pour la photo rider
+ *     • Génération d’URL ou Base‑64 inline pour les photos rider & driver
  * ───────────────────────────────────────────────────────────── */
 package com.mobility.ride.service;
 
@@ -101,11 +101,11 @@ public class RideService {
 
         Ride saved = rideRepository.save(ride);
 
-        /* pré-autorisation paiement si nécessaire */
+        /* pré‑autorisation paiement si nécessaire */
         try {
             paymentService.authorizeRide(saved, req.getTotalFare(), req.getCurrency());
         } catch (Exception ex) {
-            System.err.printf("[PAYMENT] Pré-autorisation échouée (ride #%d) : %s%n",
+            System.err.printf("[PAYMENT] Pré‑autorisation échouée (ride #%d) : %s%n",
                     saved.getId(), ex.getMessage());
         }
 
@@ -134,12 +134,12 @@ public class RideService {
     @Transactional(readOnly = true)
     public List<RideResponse> listHistory(Long riderId) {
         return rideRepository.findAllByRiderId(riderId).stream()
-                .sorted((a,b)->b.getCreatedAt().compareTo(a.getCreatedAt()))
+                .sorted((a,b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
                 .map(this::toResponse)
                 .toList();
     }
 
-    /* ═════════════════════ 6) RE-PLANIFICATION ═══════════════════ */
+    /* ═════════════════════ 6) RE‑PLANIFICATION ═══════════════════ */
     @Transactional
     public void reschedule(Long rideId, OffsetDateTime newTs) {
 
@@ -148,14 +148,14 @@ public class RideService {
                         new EntityNotFoundException("Course non trouvée – id=" + rideId));
 
         if (ride.getStatus() != RideStatus.SCHEDULED)
-            throw new IllegalStateException("Seules les courses SCHEDULED peuvent être re-planifiées");
+            throw new IllegalStateException("Seules les courses SCHEDULED peuvent être re‑planifiées");
         if (newTs.isBefore(OffsetDateTime.now().plusMinutes(1)))
             throw new IllegalArgumentException("La nouvelle date doit être ≥ 1 minute dans le futur");
 
         ride.setScheduledAt(newTs);
     }
 
-    /* ═════════════════════ 7) FIN DE COURSE  ═════════════════════ */
+    /* ═════════════════════ 7) FIN DE COURSE ═════════════════════ */
     @Transactional
     public void finishRide(Long rideId, BigDecimal finalFare) {
 
@@ -176,27 +176,48 @@ public class RideService {
         String pickupAddr  = geoService.reverse(r.getPickupLat(),  r.getPickupLng());
         String dropoffAddr = geoService.reverse(r.getDropoffLat(), r.getDropoffLng());
 
-        /* Rider snippet */
+        /* ─── Rider ───────────────────────────────────────────── */
         User rider = userRepository.findById(r.getRiderId()).orElse(null);
 
         String riderName = rider == null ? "—"
                 : (Optional.ofNullable(rider.getFirstName()).orElse("") + " " +
-                Optional.ofNullable(rider.getLastName()).orElse("")).trim();
+                Optional.ofNullable(rider.getLastName()) .orElse("")).trim();
         if (riderName.isBlank()) riderName = "—";
 
-        /* Photo : URL ou Base-64 inline */
-        String photoUrl = null;
+        String riderPhotoUrl = null;
         if (rider != null) {
             if (rider.getProfilePictureKey() != null) {
-                photoUrl = "/api/v1/users/" + rider.getId() + "/photo";
+                riderPhotoUrl = "/api/v1/users/" + rider.getId() + "/photo";
             } else if (rider.getProfilePicture() != null) {
                 String mime = Optional.ofNullable(rider.getProfilePictureMimeType())
                         .orElse("image/jpeg");
-                photoUrl = "data:" + mime + ";base64," +
+                riderPhotoUrl = "data:" + mime + ";base64," +
                         Base64.getEncoder().encodeToString(rider.getProfilePicture());
             }
         }
 
+        /* ─── Driver ──────────────────────────────────────────── */
+        User driver = (r.getDriverId() == null) ? null
+                : userRepository.findById(r.getDriverId()).orElse(null);           // ★
+
+        String driverName = driver == null ? "—"                                        // ★
+                : (Optional.ofNullable(driver.getFirstName()).orElse("") + " " +
+                Optional.ofNullable(driver.getLastName()) .orElse("")).trim();
+        if (driverName.isBlank()) driverName = "—";                                     // ★
+
+        String driverPhotoUrl = null;                                                   // ★
+        if (driver != null) {
+            if (driver.getProfilePictureKey() != null) {
+                driverPhotoUrl = "/api/v1/users/" + driver.getId() + "/photo";
+            } else if (driver.getProfilePicture() != null) {
+                String mime = Optional.ofNullable(driver.getProfilePictureMimeType())
+                        .orElse("image/jpeg");
+                driverPhotoUrl = "data:" + mime + ";base64," +
+                        Base64.getEncoder().encodeToString(driver.getProfilePicture());
+            }
+        }
+
+        /* ─── Construction réponse ───────────────────────────── */
         return RideResponse.builder()
                 .rideId         (r.getId())
                 .status         (r.getStatus().name())
@@ -217,10 +238,16 @@ public class RideService {
                 .deliveryZone   (r.getDeliveryZone().name())
                 .safetyPin      (r.getSafetyPin())
                 .createdAt      (r.getCreatedAt())
-                /* champs utiles côté mobile */
+
+                /* Infos passager */
                 .riderName      (riderName)
                 .riderPhone     (rider == null ? null : rider.getPhoneNumber())
-                .riderPhotoUrl  (photoUrl)
+                .riderPhotoUrl  (riderPhotoUrl)
+
+                /* Infos chauffeur – NOUVEAU */
+                .driverName     (driverName)                                   // ★
+                .driverPhone    (driver == null ? null : driver.getPhoneNumber()) // ★
+                .driverPhotoUrl (driverPhotoUrl)                               // ★
                 .build();
     }
 }

@@ -1,7 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-//  FILE : src/main/java/com/mobility/ride/dto/RideResponse.java
-//  v2025-09-13 – riderName / riderPhone / riderPhotoUrl ajoutés
-// ─────────────────────────────────────────────────────────────
+// ============================
+// src/main/java/com/mobility/ride/dto/RideResponse.java
+// v2025-10-12 – rider & driver metadata alignés
+// ============================
 package com.mobility.ride.dto;
 
 import lombok.Builder;
@@ -13,11 +13,19 @@ import java.util.List;
 
 /**
  * Objet retourné après la création, la planification,
- * la re-planification ou la consultation d’une course / livraison.
+ * la re‑planification ou la consultation d’une course / livraison.
  *
- * • Adresses lisibles : {@code pickupAddress}, {@code dropoffAddress}
- * • Livraison : {@code weightKg}, {@code deliveryZone}
- * • Infos passager : {@code riderName}, {@code riderPhone}, {@code riderPhotoUrl}
+ * 🔄 Matrice front ↔ backend :
+ * <pre>
+ * ┌──────────┬───────────────────┬──────────────────┐
+ * │ Audience │  Champs « rider » │  Champs « driver »│
+ * ├──────────┼───────────────────┼──────────────────┤
+ * │ Driver   │       ✅          │       –          │
+ * │ Rider    │       –          │       ✅          │
+ * └──────────┴───────────────────┴──────────────────┘
+ * </pre>
+ * Le DTO expose donc **les deux familles** de champs pour éviter toute
+ * divergence entre les applications mobiles.
  */
 @Getter
 @Builder
@@ -55,10 +63,15 @@ public class RideResponse {
     /** Zone de livraison (LOCAL, INTERURBAIN, INTERNATIONAL_…). */
     private String deliveryZone;
 
-    /* ───────── Infos passager ────────── */
-    private String riderName;      // « John D. » ou « — »
+    /* ───────── Infos passager (vue chauffeur) ───────── */
+    private String riderName;      // « John D. » ou « — »
     private String riderPhone;     // format E.164 ou null
     private String riderPhotoUrl;  // clé objet ou URL CDN (peut être null)
+
+    /* ───────── Infos chauffeur (vue passager) ───────── */
+    private String driverName;     // « Alice M. » ou « — »
+    private String driverPhone;    // format E.164 ou null
+    private String driverPhotoUrl; // idem
 
     /* ───────── Sécurité & audit ─────── */
     private String         safetyPin;

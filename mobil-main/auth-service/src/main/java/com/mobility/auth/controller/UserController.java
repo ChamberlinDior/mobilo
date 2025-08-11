@@ -1,12 +1,11 @@
 // ─────────────────────────────────────────────────────────────
 //  FILE : src/main/java/com/mobility/auth/controller/UserController.java
-//  v2025-09-14 – déplacement de /{id}/photo hors du sous-chemin /me
+//  v2025‑09‑20 – ajoute /me/push-tokens et /me/kyc/* (+ clean import)
 // ─────────────────────────────────────────────────────────────
 package com.mobility.auth.controller;
 
 import com.mobility.auth.dto.*;
-import com.mobility.auth.model.Address;
-import com.mobility.auth.model.PushToken;
+import com.mobility.auth.model.*;
 import com.mobility.auth.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +17,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+
+import static org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE;
 
 @RestController
 @RequestMapping("/api/v1/users")
@@ -42,7 +43,7 @@ public class UserController {
 
     /* ────── profile picture (blob) ────── */
 
-    @PostMapping(path = "/me/picture", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(path = "/me/picture", consumes = MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Void> uploadProfilePicture(
             @AuthenticationPrincipal Jwt jwt,
             @RequestPart("file") MultipartFile file) throws IOException {
@@ -102,11 +103,58 @@ public class UserController {
         return ResponseEntity.ok(userService.updateEmergencyContact(jwt.getSubject(), contact));
     }
 
-    /* ═══════════ 2-FA, push-tokens, KYC … (inchangés) ═══════════ */
+    /* ═══════════ 2‑FA (inchangé – placeholder) ═══════════ */
+    //  /me/two-factor ON/OFF ici si besoin.
 
-    // … (les méthodes /me/two-factor, /me/push-tokens, /me/kyc/* restent identiques)
+    /* ═══════════ PUSH‑TOKENS (expo / FCM) ═══════════ */
+
+    @GetMapping("/me/push-tokens")
+    public ResponseEntity<List<PushToken>> listPushTokens(@AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(userService.listPushTokens(jwt.getSubject()));
+    }
+
+    @PostMapping("/me/push-tokens")
+    public ResponseEntity<PushToken> addPushToken(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody PushToken token) {
+
+        PushToken saved = userService.addPushToken(jwt.getSubject(), token);
+        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+    }
+
+    @DeleteMapping("/me/push-tokens/{token}")
+    public ResponseEntity<Void> deletePushToken(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String token) {
+
+        userService.deletePushToken(jwt.getSubject(), token);
+        return ResponseEntity.noContent().build();
+    }
+
+    /* ═══════════ KYC (Know‑Your‑Customer) ═══════════ */
+
+    @GetMapping("/me/kyc/status")
+    public ResponseEntity<KycStatus> getKycStatus(@AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(userService.getKycStatus(jwt.getSubject()));
+    }
+
+    @GetMapping("/me/kyc/documents")
+    public ResponseEntity<KycDocumentPage> listKycDocs(@AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(userService.listDocuments(jwt.getSubject()));
+    }
+
+    @PostMapping(path = "/me/kyc/documents", consumes = MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<UrlDocument> uploadKycDocument(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam("type") String docType,
+            @RequestPart("file") MultipartFile file) throws Exception {
+
+        UrlDocument doc = userService.uploadDocument(jwt.getSubject(), file, docType);
+        return ResponseEntity.status(HttpStatus.CREATED).body(doc);
+    }
 
     /* ═══════════ NEW : photo publique d’un autre utilisateur ═══════════ */
+
     @GetMapping("/{id}/photo")
     public ResponseEntity<byte[]> getPhoto(@PathVariable Long id) {
         ProfilePicture pic = userService.getProfilePictureById(id);
