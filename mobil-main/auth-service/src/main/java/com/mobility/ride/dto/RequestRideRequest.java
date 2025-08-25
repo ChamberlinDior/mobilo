@@ -1,14 +1,18 @@
 // ───────────────────────────────────────────────────────────────
 //  FILE : src/main/java/com/mobility/ride/dto/RequestRideRequest.java
-//  v2025-07-22 – « 0 kg permis pour les rides LOCAL »
+//  v2025-10-09 – currency READ_ONLY + deliveryZone nullable + Jacksonized
 // ───────────────────────────────────────────────────────────────
 package com.mobility.ride.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.mobility.ride.model.DeliveryZone;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.*;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.extern.jackson.Jacksonized;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -23,17 +27,22 @@ import java.util.List;
  *         <li>≥ 0,1 kg pour les livraisons (zone ≠ LOCAL).</li>
  *       </ul>
  *   </li>
- *   <li>Le passager est authentifié via le JWT ; <code>riderId</code> est donc <em>null</em> côté front.</li>
+ *   <li>Le passager est authentifié via le JWT ; <code>riderId</code> est injecté côté serveur.</li>
+ *   <li><strong>currency</strong> est fixée côté serveur (géoloc + YAML) — ignorée si fournie par le client.</li>
  * </ul>
  */
 @Getter
 @Builder
+@Jacksonized
+@NoArgsConstructor
+@AllArgsConstructor
 public class RequestRideRequest {
 
     /* ─────────── Contexte ─────────── */
 
-    /** ID interne du passager (injecté côté serveur). */
+    /** ID interne du passager (injecté côté serveur ; ignoré à l'entrée JSON). */
     @Null
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Long riderId;
 
     /* ─────────── Points de trajet ─────────── */
@@ -75,9 +84,9 @@ public class RequestRideRequest {
 
     /**
      * Zone de service : LOCAL, INTERURBAIN ou INTERNATIONAL.
-     * Peut être null dans le JSON (défaut LOCAL appliqué en contrôleur).
+     * Peut être null dans le JSON (le contrôleur appliquera LOCAL par défaut).
      */
-    @NotNull
+    @Nullable
     private DeliveryZone deliveryZone;
 
     /* ─────────── Tarification ─────────── */
@@ -87,7 +96,10 @@ public class RequestRideRequest {
     @DecimalMin(value = "0.0", inclusive = false)
     private BigDecimal totalFare;
 
-    /** Devise ISO-4217 (EUR, USD, XAF…). */
-    @NotBlank
+    /**
+     * Devise ISO-4217 (EUR, USD, XAF…).
+     * Déterminée côté serveur → ignorée si envoyée par le client.
+     */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private String currency;
 }

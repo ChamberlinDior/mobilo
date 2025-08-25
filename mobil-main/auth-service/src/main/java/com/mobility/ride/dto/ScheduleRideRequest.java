@@ -1,10 +1,10 @@
 // ───────────────────────────────────────────────────────────────
 //  FILE : src/main/java/com/mobility/ride/dto/ScheduleRideRequest.java
-//  v2025-07-22 – « 0 kg autorisé pour les rides LOCAL »
+//  v2025-10-09 – riderId READ_ONLY • productType @NotBlank • currency validée
 // ───────────────────────────────────────────────────────────────
 package com.mobility.ride.dto;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.mobility.ride.model.DeliveryZone;
 import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.DecimalMax;
@@ -12,6 +12,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -32,11 +33,11 @@ import java.util.List;
  *   <li><strong>totalFare / currency</strong> : tarif calculé côté mobile + devise ISO-4217.</li>
  *   <li><strong>weightKg</strong> :
  *       <ul>
- *         <li><em>LOCAL</em> → peut être <strong>0&nbsp;kg</strong> (non pris en compte).</li>
+ *         <li><em>LOCAL</em> → autorise <strong>0&nbsp;kg</strong> (pas de colis).</li>
  *         <li><em>INTERURBAIN / INTERNATIONAL</em> → doit être &ge;&nbsp;0,1&nbsp;kg.</li>
  *       </ul>
  *   </li>
- *   <li><strong>deliveryZone</strong> : LOCAL, INTERURBAIN ou INTERNATIONAL…</li>
+ *   <li><strong>deliveryZone</strong> : LOCAL, INTERURBAIN ou INTERNATIONAL… (défaut = LOCAL côté contrôleur si null)</li>
  * </ul>
  */
 @Getter
@@ -48,8 +49,8 @@ public class ScheduleRideRequest {
 
     /* ─────────── Contexte interne ─────────── */
 
-    /** ID interne du passager (renseigné serveur, donc ignoré en JSON). */
-    @JsonIgnore
+    /** ID interne du passager (renseigné serveur, ignoré à l'entrée JSON). */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Long riderId;
 
     /* ─────────── Points de trajet ─────────── */
@@ -69,7 +70,7 @@ public class ScheduleRideRequest {
     /* ─────────── Produit & options ─────────── */
 
     /** Type de produit (X, XL, POOL, DELIVERY, etc.). */
-    @NotNull
+    @NotBlank
     private String productType;
 
     /** Options facultatives choisies par l’utilisateur. */
@@ -90,7 +91,7 @@ public class ScheduleRideRequest {
     private BigDecimal weightKg;
 
     /**
-     * Zone de livraison :
+     * Zone de service :
      * <ul>
      *   <li><strong>LOCAL</strong> pour une course classique ;</li>
      *   <li><strong>INTERURBAIN</strong> ou <strong>INTERNATIONAL</strong> pour un colis.</li>
@@ -117,6 +118,10 @@ public class ScheduleRideRequest {
     @DecimalMin("0.0")
     private BigDecimal totalFare;
 
-    @NotBlank @Size(min = 3, max = 8)
+    /** Devise ISO-4217 (ex. EUR, USD, XAF). */
+    @NotBlank
+    @Size(min = 3, max = 8)
+    @Pattern(regexp = "^[A-Za-z]{3,8}$",
+            message = "currency doit être 3–8 lettres (ISO-4217)")
     private String currency;
 }
