@@ -1,3 +1,7 @@
+// ─────────────────────────────────────────────────────────────
+// FILE : auth-service/src/main/java/com/mobility/auth/config/SecurityConfig.java
+// v2025-08-26 – config unique (auth + ride), CORS activé, préflight OPTIONS permis
+// ─────────────────────────────────────────────────────────────
 package com.mobility.auth.config;
 
 import com.mobility.auth.security.MyAuthenticationProvider;
@@ -20,6 +24,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.http.HttpMethod;
 
 import javax.crypto.SecretKey;
 
@@ -35,37 +40,47 @@ public class SecurityConfig {
 
     /* ─────────── AuthenticationManager global ─────────── */
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg)
-            throws Exception {
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
         return cfg.getAuthenticationManager();
     }
 
     /* ─────────── Chaîne de filtres Spring-Security ─────────── */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
-                                                   MyAuthenticationProvider myAuthProvider)
-            throws Exception {
+                                                   MyAuthenticationProvider myAuthProvider) throws Exception {
 
-        http
-                /* WebSocket : handshake GET /ws/** autorisé, CSRF ignoré */
+        return http
+                /* Active CORS ; si un bean CorsConfigurationSource existe (ex: CorsConfig), il sera utilisé */
+                .cors(Customizer.withDefaults())
+
+                /* WebSocket : handshake GET /ws/** autorisé, CSRF ignoré (REST stateless) */
                 .csrf(csrf -> csrf
                         .ignoringRequestMatchers(new AntPathRequestMatcher("/ws/**"))
                         .disable())
+
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(myAuthProvider)
+
+                /* Ressource server JWT (Authorization: Bearer …) */
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
+
                 .authorizeHttpRequests(auth -> auth
+                        /* Pré-flight CORS */
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        /* Public : auth, docs, swagger, handshake WS */
                         .requestMatchers(
                                 "/api/v1/auth/**",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
-                                "/ws/**"                 /* handshake STOMP */
+                                "/ws/**"
                         ).permitAll()
-                        .anyRequest().authenticated()
-                );
 
-        return http.build();
+                        /* Le reste nécessite un JWT valide */
+                        .anyRequest().authenticated()
+                )
+                .build();
     }
 
     /* ─────────── Décodage / validation JWT (HS256) ─────────── */

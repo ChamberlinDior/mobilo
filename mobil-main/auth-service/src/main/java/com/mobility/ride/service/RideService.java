@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 // FILE : src/main/java/com/mobility/ride/service/RideService.java
 // v2025-10-13  – affichage fiable (rider/driver/colis), préfetch Users,
-//                 feeds actifs, offres proches, transitions driver,
-//                 alias listScheduled/listHistory pour compatibilité.
+//                feeds actifs, offres proches, transitions driver,
+//                alias listScheduled/listHistory, +completedAt & tri HISTORY.
 // ─────────────────────────────────────────────────────────────
 package com.mobility.ride.service;
 
@@ -162,14 +162,23 @@ public class RideService {
     /* ═════════════════════ 6) HISTORIQUE (rider/driver) ═══════════ */
     @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public List<RideResponse> listHistoryForRider(Long riderId) {
-        List<Ride> rides = rideRepository.findAllByRiderIdOrderByCreatedAtDesc(riderId);
+        var rides = rideRepository.findAllByRiderIdOrderByCreatedAtDesc(riderId).stream()
+                .filter(r -> r.getStatus() == RideStatus.COMPLETED || r.getStatus() == RideStatus.CANCELLED)
+                .sorted(Comparator.comparing(
+                        (Ride r) -> Optional.ofNullable(r.getDropoffRealAt()).orElse(r.getCreatedAt())
+                ).reversed())
+                .toList();
         return mapWithPrefetch(rides);
     }
 
     @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public List<RideResponse> listHistoryForDriver(Long driverId) {
-        List<Ride> rides = rideRepository.findAllByDriverId(driverId).stream()
-                .sorted(Comparator.comparing(Ride::getCreatedAt).reversed()).toList();
+        var rides = rideRepository.findAllByDriverId(driverId).stream()
+                .filter(r -> r.getStatus() == RideStatus.COMPLETED || r.getStatus() == RideStatus.CANCELLED)
+                .sorted(Comparator.comparing(
+                        (Ride r) -> Optional.ofNullable(r.getDropoffRealAt()).orElse(r.getCreatedAt())
+                ).reversed())
+                .toList();
         return mapWithPrefetch(rides);
     }
 
@@ -325,6 +334,7 @@ public class RideService {
                 .deliveryZone   (r.getDeliveryZone()==null ? null : r.getDeliveryZone().name())
                 .safetyPin      (r.getSafetyPin())
                 .createdAt      (r.getCreatedAt())
+                .completedAt    (r.getDropoffRealAt())      // ✅ clé pour l’onglet HISTORY
 
                 // Vue chauffeur (passager)
                 .riderName      (riderName)
@@ -347,9 +357,7 @@ public class RideService {
             if (s == null) continue;
             try {
                 list.add(RideOption.valueOf(s));
-            } catch (IllegalArgumentException ignore) {
-                // on ignore silencieusement les options inconnues pour ne pas bloquer l’affichage
-            }
+            } catch (IllegalArgumentException ignore) { /* option inconnue → on ignore */ }
         }
         return list.isEmpty() ? null : list;
     }
