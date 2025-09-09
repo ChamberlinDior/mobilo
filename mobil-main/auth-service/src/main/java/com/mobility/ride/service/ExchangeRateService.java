@@ -1,7 +1,7 @@
 // ───────────────────────────────────────────────────────────────
 //  FILE : src/main/java/com/mobility/ride/service/ExchangeRateService.java
-//  DESC : Conversion hors-ligne XAF ↔ USD / EUR.
-//         – Suffisant pour tarification colis interurbain & international.
+//  DESC : Conversion hors-ligne XAF ↔ USD / EUR + providerName().
+//         Suffisant pour le dev/local ; remplaçable par un client HTTP.
 // ───────────────────────────────────────────────────────────────
 package com.mobility.ride.service;
 
@@ -16,7 +16,7 @@ import java.util.Set;
 @Service
 public class ExchangeRateService {
 
-    /* ===== TAUX FIGÉS À METTRE À JOUR PONCTUELLEMENT ===== */
+    /* ===== TAUX FIGÉS À METTRE À JOUR PONCTUELLEMENT (ENV DEV) ===== */
 
     /** 1 USD = 615 XAF (exemple) */
     private static final BigDecimal XAF_PER_USD = new BigDecimal("615.00");
@@ -24,10 +24,8 @@ public class ExchangeRateService {
     /** 1 EUR = 665 XAF (exemple) */
     private static final BigDecimal XAF_PER_EUR = new BigDecimal("665.00");
 
-    private static final int SCALE = 8;                 // précision
+    private static final int SCALE = 8;  // précision des taux
     private static final Set<String> SUPPORTED = Set.of("XAF", "USD", "EUR");
-
-    /* =======================  API  ======================= */
 
     /**
      * Retourne le multiplicateur permettant de convertir 1 {@code from}
@@ -40,9 +38,9 @@ public class ExchangeRateService {
         if (!SUPPORTED.contains(from) || !SUPPORTED.contains(to)) {
             throw new IllegalArgumentException("Devise non supportée : " + from + " / " + to);
         }
-        if (from.equals(to)) return BigDecimal.ONE;      // même devise
+        if (from.equals(to)) return BigDecimal.ONE; // même devise
 
-        /* ---- étape 1 : convertir 1 « from » en XAF ---- */
+        // Étape 1 : 1 <from> → XAF
         BigDecimal xafOfOne = switch (from) {
             case "XAF" -> BigDecimal.ONE;
             case "USD" -> XAF_PER_USD;
@@ -50,7 +48,7 @@ public class ExchangeRateService {
             default    -> throw new IllegalStateException("Devise inattendue : " + from);
         };
 
-        /* ---- étape 2 : convertir ces XAF en « to » ---- */
+        // Étape 2 : XAF → <to>
         BigDecimal toPerXaf = switch (to) {
             case "XAF" -> BigDecimal.ONE;
             case "USD" -> BigDecimal.ONE.divide(XAF_PER_USD, SCALE, RoundingMode.HALF_UP);
@@ -61,5 +59,13 @@ public class ExchangeRateService {
         BigDecimal rate = xafOfOne.multiply(toPerXaf).setScale(SCALE, RoundingMode.HALF_UP);
         log.debug("💱 FX offline {}→{} = {}", from, to, rate);
         return rate;
+    }
+
+    /**
+     * Nom du fournisseur de taux (pour traçabilité dans WalletTransaction).
+     * En prod, renvoie le nom du provider réel (ex: exchangerate.host).
+     */
+    public String providerName() {
+        return "offline-static";
     }
 }

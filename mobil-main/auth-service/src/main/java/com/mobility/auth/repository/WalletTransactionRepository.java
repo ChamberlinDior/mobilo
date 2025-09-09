@@ -3,21 +3,26 @@
  * ------------------------------------------------------------------*/
 package com.mobility.auth.repository;
 
-import com.mobility.auth.model.WalletTransaction;
 import com.mobility.auth.model.User;
+import com.mobility.auth.model.WalletTransaction;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Optional;
+
+/**
+ * Accès lecture/écriture aux transactions wallet.
+ */
 public interface WalletTransactionRepository extends JpaRepository<WalletTransaction, Long> {
 
     /**
-     * Renvoie l’historique des transactions d’un utilisateur,
-     * trié du plus récent au plus ancien.
-     *
-     * @param user     l’entité User
-     * @param pageable pagination / tri Spring Data
-     * @return page de WalletTransaction
+     * Historique paginé d’un utilisateur, du plus récent au plus ancien.
      */
     Page<WalletTransaction> findByUserOrderByCreatedAtDesc(User user, Pageable pageable);
+
+    /**
+     * Recherche d’une transaction existante par clé d’idempotence (anti double-débit).
+     */
+    Optional<WalletTransaction> findByUserAndIdempotencyKey(User user, String idempotencyKey);
 }

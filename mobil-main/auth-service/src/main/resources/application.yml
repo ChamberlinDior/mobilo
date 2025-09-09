@@ -1,110 +1,180 @@
 ######################################################################
-#  APPLICATION (profil « default »)
+#  APPLICATION (profil par défaut = local)
 ######################################################################
 
 spring:
-  jackson:
-    mapper:
-      accept-case-insensitive-enums: true   # ← “cash”, “CASH”, “Cash”… acceptés
-
   application:
-    name: ride-service
-
+    name: auth-service
   profiles:
     default: local
 
-  # ─────────── CACHE ───────────
+  jackson:
+    mapper:
+      accept-case-insensitive-enums: true
+    serialization:
+      write-dates-as-timestamps: false
+
   cache:
     type: caffeine
     caffeine:
       spec: maximumSize=2000,expireAfterWrite=30s
 
-  # ─────────── DATASOURCE ──────
-  datasource:
-    url: jdbc:mysql://localhost:3306/mobilite?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    username: root
-    password: root
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    hikari.maximum-pool-size: 10
+  servlet:
+    multipart:
+      max-file-size: -1
+      max-request-size: -1
 
-  # ─────────── JPA / HIBERNATE ─
-  jpa:
-    hibernate.ddl-auto: update
-    properties.hibernate.dialect: org.hibernate.dialect.MySQLDialect
-    show-sql: false
-
-  # ─────────── SECURITY (JWT) ──
   security:
     oauth2:
       resourceserver:
         jwt:
           secret: ${app.jwt.secret}
 
-  # ─────────── MULTIPART ───────
-  servlet:
-    multipart:
-      max-file-size: -1
-      max-request-size: -1
+# Exposition Actuator de base (ajuste selon besoin)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,metrics,prometheus"
+  endpoint:
+    health:
+      show-details: when_authorized
 
-  # ─────────── TASKS ───────────
-  task:
-    scheduling:
-      pool:
-        size: 4
+server:
+  forward-headers-strategy: framework
+  compression:
+    enabled: true
 
-  # ─────────── MAIL (stub) ─────
-  mail:
-    host: localhost
-    port: 2500
-    protocol: smtp
-    properties:
-      mail:
-        smtp:
-          auth: false
-          starttls:
-            enable: false
-    from: no-reply@ride-service.example.com
+logging:
+  level:
+    root: INFO
+    com.mobility: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN
 
-# ─────────── SECRETS / KEYS ────
+######################################################################
+#  PARAMÈTRES APPLICATIFS
+######################################################################
 app:
   jwt:
-    secret: sCyaX+2NsXpvQUvJBA0Xzj6EObLLZEfggYg0RUe2D68=
+    secret: ${APP_JWT_SECRET:sCyaX+2NsXpvQUvJBA0Xzj6EObLLZEfggYg0RUe2D68=}
     issuer: mobility-auth
     clock-skew-sec: 60
-  payments:
-    provider: stub
-  geocoding:
-    api-key: AIzaSyBViGGakHSvDKELeL_3xX3bcfpVddpFIUg
 
-  # ─────────── PUSH (Expo/FCM) ─
+  # CORS (lu par SecurityConfig côté code)
+  cors:
+    allowed-origins:
+      - http://localhost:3000
+      - http://localhost:5173
+      - http://localhost:19006        # Expo Web
+      - exp://127.0.0.1:19000         # Expo Go
+    allowed-methods: [GET,POST,PUT,DELETE,OPTIONS]
+    allowed-headers: ["*"]
+
+  # Paiements : provider global + credentials par provider
+  payments:
+    provider: stub                     # override en prod: stripe
+    accepted-providers: [STRIPE, APPLE_PAY, PAYPAL, CASH, AIRTEL_MONEY_GA]
+    stripe:
+      secret-key: ${STRIPE_SECRET_KEY:}
+      webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+    paypal:
+      client-id: ${PAYPAL_CLIENT_ID:}
+      client-secret: ${PAYPAL_CLIENT_SECRET:}
+      webhook-id: ${PAYPAL_WEBHOOK_ID:}
+    apple:
+      merchant-id: ${APPLE_MERCHANT_ID:}
+      merchant-cert: ${APPLE_MERCHANT_CERT:}
+      merchant-key: ${APPLE_MERCHANT_KEY:}
+    airtel-ga:
+      api-key: ${AIRTEL_GA_API_KEY:}
+      api-secret: ${AIRTEL_GA_API_SECRET:}
+      base-url: https://openapi.airtel.africa
+      webhook-secret: ${AIRTEL_GA_WEBHOOK_SECRET:}
+
+  # Push
   push:
-    provider: expo           # expo | fcm | stub
+    provider: expo                     # override prod: fcm
     expo:
       api: https://exp.host/--/api/v2/push/send
-      maxBatch: 90           # Expo recommande < 100
+      maxBatch: 90
     fcm:
-      serverKey: ""          # Non requis pour Expo Go
+      serverKey: ${FCM_SERVER_KEY:}
       endpoint: https://fcm.googleapis.com/fcm/send
 
-# ─────────── EXCHANGE RATES ────
+  # Géocodage / géolocalisation
+  geocoding:
+    api-key: ${GEOCODING_API_KEY:}
+
+# Résolution de devise par géoloc / pays (utilisé par CurrencyResolver)
+currency:
+  geo:
+    enabled: true
+    fallback: USD
+    countryCurrencyMap:
+      US: USD
+      FR: EUR
+      GA: XAF
+
+# Taux de change
 exchange:
   api:
-    url: https://api.exchangerate.host/latest     # ← endpoint du provider FX
-    key: YOUR_API_KEY_HERE
+    provider: exchangerate_host
+    url: https://api.exchangerate.host/latest
+    key: ${FX_API_KEY:}
+  cacheTtlSeconds: 300
 
-# ────────────────────────────────────────────────
-#       TARIFICATION PROXIMO 2025
-# ────────────────────────────────────────────────
+# Paramétrage Wallet (limits, kyc, idempotency, arrondis)
+wallet:
+  currency:
+    default: USD
+    rounding:
+      USD: 2
+      EUR: 2
+      XAF: 0
+  kyc:
+    withdrawMinLevel: VERIFIED
+  idempotency:
+    enabled: true
+    # délai indicatif si vous tenez un cache/mémoire (la DB reste source de vérité via unique key)
+    ttlSeconds: 86400
+  limits:
+    XAF:
+      topup:
+        min: 500
+        max_daily: 200000
+      withdraw:
+        min: 1000
+        max_daily: 100000
+    USD:
+      topup:
+        min: 2
+        max_daily: 1000
+      withdraw:
+        min: 5
+        max_daily: 500
+    EUR:
+      topup:
+        min: 2
+        max_daily: 1000
+      withdraw:
+        min: 5
+        max_daily: 500
+  payouts:
+    routing:
+      USD: ACH
+      EUR: SEPA
+      XAF: MOBILE_MONEY
+
+# Tarification & devise par zone (utilisé aussi par CurrencyResolverImpl)
 pricing:
   country:
 
-    ##################################################################
-    #  Bloc de secours « default » – utilisé quand cityId = 0
-    ##################################################################
     default:
       cityId: 0
-      currency: USD            # ← devise par défaut
-      ratePerKm:               # ← mêmes valeurs que USA
+      currency: USD
+      ratePerKm:
         X:        2.90
         POOL:     2.03
         MOTO:     1.50
@@ -131,7 +201,7 @@ pricing:
       platformShare:
         default: 0.20
 
-    usa:           # cityId 20 — New-York
+    usa:           # cityId 20 — New York
       cityId: 20
       currency: USD
       ratePerKm:
@@ -159,59 +229,7 @@ pricing:
         DELIVERY: 250
       flatFare:
         MOTO:
-          intra_city:        2000   # Libreville ↔ Libreville
-          libreville_akanda: 3000   # Libreville ↔ Akanda/Owendo
+          intra_city:        2000
+          libreville_akanda: 3000
       platformShare:
         default: 0.20
-
-######################################################################
-#  PROFIL LOCAL  (pas de surcharge ici — voir application-local.yml)
-######################################################################
----
-spring:
-  config:
-    activate:
-      on-profile: local
-
-######################################################################
-#  PROFIL PROD  (exemple)
-######################################################################
----
-spring:
-  config:
-    activate:
-      on-profile: prod
-
-  datasource:
-    url: jdbc:mysql://prod-db-host:3306/mobilit?useSSL=true&serverTimezone=UTC
-    username: ride_user
-    password: ChangeMe!
-    hikari:
-      maximum-pool-size: 30
-
-  servlet:
-    multipart:
-      max-file-size: 25MB
-      max-request-size: 25MB
-
-  mail:
-    host: smtp.example.com
-    port: 587
-    username: no-reply@ride-service.example.com
-    password: ultraSecretPassword
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-    from: no-reply@ride-service.example.com
-
-app:
-  payments:
-    provider: stripe
-
-exchange:
-  api:
-    url: https://api.exchangerate.host/latest
-    key: ""

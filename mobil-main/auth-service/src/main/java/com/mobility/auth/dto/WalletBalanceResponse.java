@@ -8,7 +8,8 @@ import lombok.Getter;
 
 import java.math.BigDecimal;
 
-@Getter @AllArgsConstructor
+@Getter
+@AllArgsConstructor
 public class WalletBalanceResponse {
     private BigDecimal walletBalance;
     private BigDecimal promoBalance;

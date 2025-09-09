@@ -1,8 +1,6 @@
-# src/main/resources/application-prod.yml
 ######################################################################
 #  PROFIL  « prod »
 ######################################################################
-
 spring:
   config:
     activate:
@@ -10,9 +8,9 @@ spring:
 
   # ── DATASOURCE ─────────────────────────────────────────────────────────────
   datasource:
-    url: jdbc:mysql://prod-db-host:3306/mobilite?useSSL=true&serverTimezone=UTC
-    username: mobility
-    password: ChangeMe!
+    url: ${DB_URL:jdbc:mysql://prod-db-host:3306/mobilite?useSSL=true&serverTimezone=UTC}
+    username: ${DB_USER:mobility}
+    password: ${DB_PASSWORD:ChangeMe!}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 30
@@ -20,7 +18,7 @@ spring:
   # ── JPA / HIBERNATE ─────────────────────────────────────────────────────────
   jpa:
     hibernate:
-      ddl-auto: validate              # Flyway fait le DDL ; on valide seulement
+      ddl-auto: validate                 # Flyway gère le schéma ; on valide seulement
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
@@ -30,7 +28,7 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
-    baseline-on-migrate: true         # autorise la prise en compte d’un schéma existant
+    baseline-on-migrate: true           # accepte un schéma déjà existant
     validate-on-migrate: true
 
   # ── MULTIPART (fichiers) ────────────────────────────────────────────────────
@@ -41,10 +39,10 @@ spring:
 
   # ── MAIL (SMTP) ─────────────────────────────────────────────────────────────
   mail:
-    host: smtp.example.com
-    port: 587
-    username: no-reply@mobility.example.com
-    password: ultraSecretPassword
+    host: ${SMTP_HOST:smtp.example.com}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USER:no-reply@ride-service.example.com}
+    password: ${SMTP_PASS:ultraSecretPassword}
     protocol: smtp
     properties:
       mail:
@@ -52,11 +50,11 @@ spring:
           auth: true
           starttls:
             enable: true
-    from: no-reply@mobility.example.com
+    from: no-reply@ride-service.example.com
 
 # ── SERVER (derrière proxy / perf) ────────────────────────────────────────────
 server:
-  forward-headers-strategy: framework   # X-Forwarded-* depuis Nginx/ALB
+  forward-headers-strategy: framework    # X-Forwarded-* depuis Nginx/ALB
   compression:
     enabled: true
   tomcat:
@@ -68,50 +66,200 @@ logging:
   level:
     root: INFO
     com.mobility: INFO
-    com.mobility.ride.service.push: INFO
     org.springframework.web: INFO
     org.hibernate.SQL: WARN
     org.hibernate.orm.jdbc.bind: WARN
 
+# ── ACTUATOR ──────────────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,metrics,prometheus"
+  endpoint:
+    health:
+      show-details: when_authorized
+
 # ───────────────────────────────────────────────────────────────────────────────
-# Propriétés applicatives
+# Propriétés applicatives (secrets via variables d'environnement)
 # ───────────────────────────────────────────────────────────────────────────────
 app:
   jwt:
     secret: ${APP_JWT_SECRET:ChangeMe!}
     issuer: mobility-auth
     clock-skew-sec: 60
-  payments:
-    provider: stripe
-  geocoding:
-    api-key: AIzaSyBViGGakHSvDKELeL_3xX3bcfpVddpFIUg   # clé Google Geocoding
 
-  # PUSH en production : par défaut FCM (configurable par env)
+  # CORS (lu par SecurityConfig)
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:https://app.example.com,https://admin.example.com}
+    allowed-methods: [GET,POST,PUT,DELETE,OPTIONS]
+    allowed-headers: ["*"]
+
+  # Paiements : provider global + credentials par provider
+  payments:
+    provider: ${PAYMENTS_PROVIDER:stripe}        # stripe | stub | paypal | ...
+    accepted-providers: [STRIPE, APPLE_PAY, PAYPAL, CASH, AIRTEL_MONEY_GA]
+    stripe:
+      secret-key: ${STRIPE_SECRET_KEY:}
+      webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+    paypal:
+      client-id: ${PAYPAL_CLIENT_ID:}
+      client-secret: ${PAYPAL_CLIENT_SECRET:}
+      webhook-id: ${PAYPAL_WEBHOOK_ID:}
+    apple:
+      merchant-id: ${APPLE_MERCHANT_ID:}
+      merchant-cert: ${APPLE_MERCHANT_CERT:}
+      merchant-key: ${APPLE_MERCHANT_KEY:}
+    airtel-ga:
+      api-key: ${AIRTEL_GA_API_KEY:}
+      api-secret: ${AIRTEL_GA_API_SECRET:}
+      base-url: https://openapi.airtel.africa
+      webhook-secret: ${AIRTEL_GA_WEBHOOK_SECRET:}
+
+  # Push en production : FCM par défaut
   push:
-    provider: ${APP_PUSH_PROVIDER:fcm}        # fcm | expo | stub
+    provider: ${APP_PUSH_PROVIDER:fcm}           # fcm | expo | stub
     expo:
       api: https://exp.host/--/api/v2/push/send
       maxBatch: 90
     fcm:
-      serverKey: ${FCM_SERVER_KEY:}           # ⇦ renseigner en variable d’env
+      serverKey: ${FCM_SERVER_KEY:}
       endpoint: https://fcm.googleapis.com/fcm/send
 
+  # Géocodage (pour la devise par géoloc)
+  geocoding:
+    api-key: ${GEOCODING_API_KEY:}
+
 # ───────────────────────────────────────────────────────────────────────────────
-# Configuration tarifaire (pricing)
+# Devise par géolocalisation (utilisée par CurrencyResolver)
+# ───────────────────────────────────────────────────────────────────────────────
+currency:
+  geo:
+    enabled: true
+    fallback: USD
+    countryCurrencyMap:
+      US: USD
+      FR: EUR
+      GA: XAF
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Taux de change (FX) – cache court pour limiter la latence
+# ───────────────────────────────────────────────────────────────────────────────
+exchange:
+  api:
+    provider: ${FX_PROVIDER:exchangerate_host}
+    url: ${FX_URL:https://api.exchangerate.host/latest}
+    key: ${FX_API_KEY:}
+  cacheTtlSeconds: 300
+
+# ───────────────────────────────────────────────────────────────────────────────
+# WALLET – règles pro (arrondis, limites, KYC, idempotency, routing payouts)
+# ───────────────────────────────────────────────────────────────────────────────
+wallet:
+  currency:
+    default: USD
+    rounding:
+      USD: 2
+      EUR: 2
+      XAF: 0
+  kyc:
+    withdrawMinLevel: VERIFIED
+  idempotency:
+    enabled: true
+    ttlSeconds: 172800                          # 48h si vous avez un cache (DB reste la vérité)
+  limits:
+    XAF:
+      topup:
+        min: 500
+        max_daily: 200000
+      withdraw:
+        min: 1000
+        max_daily: 100000
+    USD:
+      topup:
+        min: 2
+        max_daily: 1000
+      withdraw:
+        min: 5
+        max_daily: 500
+    EUR:
+      topup:
+        min: 2
+        max_daily: 1000
+      withdraw:
+        min: 5
+        max_daily: 500
+  payouts:
+    routing:
+      USD: ACH
+      EUR: SEPA
+      XAF: MOBILE_MONEY
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Tarification / devise par zone
 # ───────────────────────────────────────────────────────────────────────────────
 pricing:
-  gabon:
-    cityId: 10                 # ID interne de Libreville
-    currency: XAF
-    ratePerKm: 200
-    platformShare: 0.20
-  france:
-    cityId: 1                  # ID interne de Paris
-    currency: EUR
-    # ratePerKm → facturation dynamique via API Uber ou barème local
-    platformShare: 0.20
-  usa:
-    cityId: 20                 # ID interne de New York
-    currency: USD
-    ratePerKm: 1.00
-    platformShare: 0.20
+  country:
+
+    default:
+      cityId: 0
+      currency: USD
+      ratePerKm:
+        X:        2.90
+        POOL:     2.03
+        MOTO:     1.50
+        COMFORT:  3.20
+        XL:       4.00
+        BLACK:    4.50
+        LUX:      5.80
+        DELIVERY: 2.90
+      platformShare:
+        default: 0.20
+
+    france:        # cityId 1 — Paris
+      cityId: 1
+      currency: EUR
+      ratePerKm:
+        X:       1.90
+        POOL:    1.33
+        MOTO:    1.15
+        COMFORT: 2.28
+        XL:      2.66
+        BLACK:   2.95
+        LUX:     3.80
+        DELIVERY: 1.90
+      platformShare:
+        default: 0.20
+
+    usa:           # cityId 20 — New York
+      cityId: 20
+      currency: USD
+      ratePerKm:
+        X:       2.90
+        POOL:    2.03
+        MOTO:    1.89
+        COMFORT: 3.48
+        XL:      4.06
+        BLACK:   4.50
+        LUX:     5.80
+        DELIVERY: 2.90
+      platformShare:
+        default: 0.20
+
+    gabon:         # cityId 10 — Libreville
+      cityId: 10
+      currency: XAF
+      ratePerKm:
+        X:       250
+        POOL:    225
+        COMFORT: 250
+        XL:      250
+        BLACK:   400
+        LUX:     500
+        DELIVERY: 250
+      flatFare:
+        MOTO:
+          intra_city:        2000
+          libreville_akanda: 3000
+      platformShare:
+        default: 0.20

@@ -6,8 +6,8 @@
 spring:
   config:
     activate:
-      on-profile: local            # ← active ce fichier quand le profil = local
-    import: "classpath:application.yml"   # ⇦ récupère toute la conf par défaut
+      on-profile: local                     # ← active ce fichier quand le profil = local
+    import: "classpath:application.yml"     # ⇦ hérite de la config par défaut
 
   # ───────────────────────────────────────────────────────────────
   # CACHE (Caffeine) – valeurs plus agressives pour le dev
@@ -94,6 +94,23 @@ logging:
     org.hibernate.orm.jdbc.bind: WARN
 
 # ───────────────────────────────────────────────────────────────
+# SERVER & ACTUATOR (utile en dev)
+# ───────────────────────────────────────────────────────────────
+server:
+  forward-headers-strategy: framework
+  compression:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,metrics"
+  endpoint:
+    health:
+      show-details: when_authorized
+
+# ───────────────────────────────────────────────────────────────
 #  SECTION  « app »  – secrets/email/API-keys propres au dev
 # ───────────────────────────────────────────────────────────────
 app:
@@ -101,10 +118,36 @@ app:
     secret: sCyaX+2NsXpvQUvJBA0Xzj6EObLLZEfggYg0RUe2D68=
     issuer: mobility-auth
     clock-skew-sec: 60
+
+  # CORS dev (si ton SecurityConfig les lit)
+  cors:
+    allowed-origins:
+      - http://localhost:3000
+      - http://localhost:5173
+      - http://localhost:19006           # Expo Web
+      - exp://127.0.0.1:19000            # Expo Go
+    allowed-methods: [GET,POST,PUT,DELETE,OPTIONS]
+    allowed-headers: ["*"]
+
   payments:
-    provider: stub
-  geocoding:
-    api-key: AIzaSyBViGGakHSvDKELeL_3xX3bcfpVddpFIUg   # clé Google Geocoding
+    provider: stub                        # ← aucun débit réel en local
+    accepted-providers: [STRIPE, APPLE_PAY, PAYPAL, CASH, AIRTEL_MONEY_GA]
+    stripe:
+      secret-key: ""                      # clés vides en local
+      webhook-secret: ""
+    paypal:
+      client-id: ""
+      client-secret: ""
+      webhook-id: ""
+    apple:
+      merchant-id: ""
+      merchant-cert: ""
+      merchant-key: ""
+    airtel-ga:
+      api-key: ""
+      api-secret: ""
+      base-url: https://openapi.airtel.africa
+      webhook-secret: ""
 
   # Forcer Expo en local pour Expo Go
   push:
@@ -113,8 +156,23 @@ app:
       api: https://exp.host/--/api/v2/push/send
       maxBatch: 90
     fcm:
-      serverKey: ""          # non utilisé en local (Expo Go)
+      serverKey: ""                      # non utilisé en local (Expo Go)
       endpoint: https://fcm.googleapis.com/fcm/send
+
+  geocoding:
+    api-key: AIzaSyBViGGakHSvDKELeL_3xX3bcfpVddpFIUg   # clé Google Geocoding (dev)
+
+# ───────────────────────────────────────────────────────────────
+#  DEVISE PAR GÉOLOCALISATION (US/EUR/XAF)
+# ───────────────────────────────────────────────────────────────
+currency:
+  geo:
+    enabled: true
+    fallback: USD
+    countryCurrencyMap:
+      US: USD
+      FR: EUR
+      GA: XAF
 
 # ───────────────────────────────────────────────────────────────
 #  EXCHANGE-RATES (optionnel en local – peut rester vide)
@@ -122,7 +180,51 @@ app:
 exchange:
   api:
     url: https://api.exchangerate.host/latest
-    key: ""                     # vide = accès libre ou mock
+    key: ""                               # vide = accès libre ou mock
+  cacheTtlSeconds: 300
+
+# ───────────────────────────────────────────────────────────────
+#  WALLET – règles pro en local (arrondis, limites, idempotency)
+# ───────────────────────────────────────────────────────────────
+wallet:
+  currency:
+    default: USD
+    rounding:
+      USD: 2
+      EUR: 2
+      XAF: 0
+  kyc:
+    withdrawMinLevel: VERIFIED            # exiger KYC vérifié pour retrait
+  idempotency:
+    enabled: true
+    ttlSeconds: 86400                     # 24h si cache mémoire côté app
+  limits:
+    XAF:
+      topup:
+        min: 500
+        max_daily: 200000
+      withdraw:
+        min: 1000
+        max_daily: 100000
+    USD:
+      topup:
+        min: 2
+        max_daily: 1000
+      withdraw:
+        min: 5
+        max_daily: 500
+    EUR:
+      topup:
+        min: 2
+        max_daily: 1000
+      withdraw:
+        min: 5
+        max_daily: 500
+  payouts:
+    routing:
+      USD: ACH
+      EUR: SEPA
+      XAF: MOBILE_MONEY
 
 ######################################################################
 #  👉  Aucun bloc `pricing:` ici : la grille France / USA / Gabon
