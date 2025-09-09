@@ -76,6 +76,16 @@ app:
   geocoding:
     api-key: AIzaSyBViGGakHSvDKELeL_3xX3bcfpVddpFIUg
 
+  # ─────────── PUSH (Expo/FCM) ─
+  push:
+    provider: expo           # expo | fcm | stub
+    expo:
+      api: https://exp.host/--/api/v2/push/send
+      maxBatch: 90           # Expo recommande < 100
+    fcm:
+      serverKey: ""          # Non requis pour Expo Go
+      endpoint: https://fcm.googleapis.com/fcm/send
+
 # ─────────── EXCHANGE RATES ────
 exchange:
   api:
@@ -155,7 +165,7 @@ pricing:
         default: 0.20
 
 ######################################################################
-#  PROFIL LOCAL  (pas de surcharge)
+#  PROFIL LOCAL  (pas de surcharge ici — voir application-local.yml)
 ######################################################################
 ---
 spring:

@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  FILE : src/main/java/com/mobility/ride/service/RideFlowService.java
 //  v2025-10-11 – ouvre automatiquement la room de chat après ACCEPT
+//               + déclenche les notifications push via NotificationService
 // ─────────────────────────────────────────────────────────────────────────────
 package com.mobility.ride.service;
 
@@ -25,7 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
-import java.util.Map;          // ← NEW
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -42,6 +43,9 @@ public class RideFlowService {
     /* ─────────────── Dépendance “lazy” ─────────────── */
     private final WaitTimeService waitTimeSvc;
 
+    /* ─────────────── Notifications push ─────────────── */
+    private final NotificationService notificationService;
+
     @Autowired
     public RideFlowService(RideRepository              rideRepo,
                            PaymentService              paymentSvc,
@@ -49,14 +53,16 @@ public class RideFlowService {
                            WalletTransactionRepository txnRepo,
                            UserRepository              userRepo,
                            SimpMessagingTemplate       ws,
-                           @Lazy WaitTimeService       waitTimeSvc) {
-        this.rideRepo    = rideRepo;
-        this.paymentSvc  = paymentSvc;
-        this.pmRepo      = pmRepo;
-        this.txnRepo     = txnRepo;
-        this.userRepo    = userRepo;
-        this.ws          = ws;
-        this.waitTimeSvc = waitTimeSvc;
+                           @Lazy WaitTimeService       waitTimeSvc,
+                           NotificationService         notificationService) {
+        this.rideRepo            = rideRepo;
+        this.paymentSvc          = paymentSvc;
+        this.pmRepo              = pmRepo;
+        this.txnRepo             = txnRepo;
+        this.userRepo            = userRepo;
+        this.ws                  = ws;
+        this.waitTimeSvc         = waitTimeSvc;
+        this.notificationService = notificationService;
     }
 
     // ═════════════════ 1) ACCEPT ═══════════════════════════════════════════
@@ -103,6 +109,9 @@ public class RideFlowService {
 
         publishOps(r);  // monitoring interne
 
+        /* 6. Notifications push (rider & driver) */
+        notificationService.notifyRideStatus(r);
+
         log.info("[FLOW] Ride #{} ACCEPTED by driver #{}", r.getId(), driverId);
     }
 
@@ -115,7 +124,11 @@ public class RideFlowService {
 
         r.setStatus   (RideStatus.EN_ROUTE);
         r.setEnRouteAt(OffsetDateTime.now());
+
         publishOps(r);
+
+        /* Notifications push */
+        notificationService.notifyRideStatus(r);
     }
 
     // ═════════════════ 3) ARRIVED / WAITING ════════════════════════════════
@@ -130,6 +143,9 @@ public class RideFlowService {
 
         waitTimeSvc.startWaitingCountdown(r.getId());
         publishOps(r);
+
+        /* Notifications push */
+        notificationService.notifyRideStatus(r);
     }
 
     // ═════════════════ 4) START RIDE ═══════════════════════════════════════
@@ -144,6 +160,9 @@ public class RideFlowService {
 
         waitTimeSvc.stopWaitingCountdown(rideId);
         publishOps(r);
+
+        /* Notifications push */
+        notificationService.notifyRideStatus(r);
     }
 
     // ═════════════════ 5) COMPLETE ═════════════════════════════════════════
@@ -160,6 +179,9 @@ public class RideFlowService {
 
         capturePayment(r);
         publishOps(r);
+
+        /* Notifications push */
+        notificationService.notifyRideStatus(r);
     }
 
     // ═════════════════ 6) CANCEL / NO_SHOW ═════════════════════════════════
@@ -178,6 +200,9 @@ public class RideFlowService {
             paymentSvc.captureCancellationFee(r, WaitTimeService.NO_SHOW_FEE, r.getCurrency());
 
         publishOps(r);
+
+        /* Notifications push */
+        notificationService.notifyRideStatus(r);
     }
 
     /* ───────────────────── Helpers ───────────────────── */

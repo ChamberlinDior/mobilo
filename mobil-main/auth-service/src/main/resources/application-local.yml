@@ -82,6 +82,18 @@ spring:
     from: no-reply@ride-service.example.com
 
 # ───────────────────────────────────────────────────────────────
+# LOGS – visibilité des push en dev
+# ───────────────────────────────────────────────────────────────
+logging:
+  level:
+    root: INFO
+    com.mobility: DEBUG
+    com.mobility.ride.service.push: DEBUG
+    org.springframework.web: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN
+
+# ───────────────────────────────────────────────────────────────
 #  SECTION  « app »  – secrets/email/API-keys propres au dev
 # ───────────────────────────────────────────────────────────────
 app:
@@ -93,6 +105,16 @@ app:
     provider: stub
   geocoding:
     api-key: AIzaSyBViGGakHSvDKELeL_3xX3bcfpVddpFIUg   # clé Google Geocoding
+
+  # Forcer Expo en local pour Expo Go
+  push:
+    provider: expo
+    expo:
+      api: https://exp.host/--/api/v2/push/send
+      maxBatch: 90
+    fcm:
+      serverKey: ""          # non utilisé en local (Expo Go)
+      endpoint: https://fcm.googleapis.com/fcm/send
 
 # ───────────────────────────────────────────────────────────────
 #  EXCHANGE-RATES (optionnel en local – peut rester vide)

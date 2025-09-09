@@ -1,4 +1,7 @@
 # src/main/resources/application-prod.yml
+######################################################################
+#  PROFIL  « prod »
+######################################################################
 
 spring:
   config:
@@ -17,11 +20,18 @@ spring:
   # ── JPA / HIBERNATE ─────────────────────────────────────────────────────────
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: validate              # Flyway fait le DDL ; on valide seulement
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
     show-sql: false
+
+  # ── FLYWAY (DDL) ────────────────────────────────────────────────────────────
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true         # autorise la prise en compte d’un schéma existant
+    validate-on-migrate: true
 
   # ── MULTIPART (fichiers) ────────────────────────────────────────────────────
   servlet:
@@ -44,6 +54,25 @@ spring:
             enable: true
     from: no-reply@mobility.example.com
 
+# ── SERVER (derrière proxy / perf) ────────────────────────────────────────────
+server:
+  forward-headers-strategy: framework   # X-Forwarded-* depuis Nginx/ALB
+  compression:
+    enabled: true
+  tomcat:
+    max-threads: 200
+    accept-count: 100
+
+# ── LOGGING ───────────────────────────────────────────────────────────────────
+logging:
+  level:
+    root: INFO
+    com.mobility: INFO
+    com.mobility.ride.service.push: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN
+
 # ───────────────────────────────────────────────────────────────────────────────
 # Propriétés applicatives
 # ───────────────────────────────────────────────────────────────────────────────
@@ -56,6 +85,16 @@ app:
     provider: stripe
   geocoding:
     api-key: AIzaSyBViGGakHSvDKELeL_3xX3bcfpVddpFIUg   # clé Google Geocoding
+
+  # PUSH en production : par défaut FCM (configurable par env)
+  push:
+    provider: ${APP_PUSH_PROVIDER:fcm}        # fcm | expo | stub
+    expo:
+      api: https://exp.host/--/api/v2/push/send
+      maxBatch: 90
+    fcm:
+      serverKey: ${FCM_SERVER_KEY:}           # ⇦ renseigner en variable d’env
+      endpoint: https://fcm.googleapis.com/fcm/send
 
 # ───────────────────────────────────────────────────────────────────────────────
 # Configuration tarifaire (pricing)
